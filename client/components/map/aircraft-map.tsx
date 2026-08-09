@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Map, Marker, Popup, setWorkerUrl } from "maplibre-gl";
+import { Map, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import aircraftGeoJson from "@/utils/aircraftGeoJson";
 import aircraftGetAction from "../action/aircraftGetAction";
 
 // import { aircraft } from "@/data/aircraft";
@@ -11,13 +10,13 @@ import aircraftGetAction from "../action/aircraftGetAction";
 const DHAKA: [longitude: number, latitude: number] = [90.4125, 23.8103];
 const MAP_ZOOM = 6;
 
-function createAircraftMarker() {
-  const element = document.createElement("div");
+// function createAircraftMarker() {
+//   const element = document.createElement("div");
 
-  element.className = "aircraft-marker";
+//   element.className = "aircraft-marker";
 
-  return element;
-}
+//   return element;
+// }
 
 export  function AircraftMap() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -42,37 +41,44 @@ useEffect(() => {
     zoom: MAP_ZOOM,
   });
 
-  const loadAircraft = async () => {
-    try {
-      const data = await aircraftGetAction();
+ map.on("load", async () => {
+  try {
+    const aircraftImage = await map.loadImage("/airplane-svgrepo-com.png");
 
-      console.log("AIRCRAFT DATA:", data);
+    console.log("IMAGE LOADED:", aircraftImage);
 
-      for (const item of data.features) {
-        new Marker({
-          draggable: false,
-          element: createAircraftMarker(),
-          rotation: item.heading - 45,
-          rotationAlignment: "map",
-        })
-          .setLngLat([
-            item.longitude,
-            item.latitude,
-          ])
-          .setPopup(
-            new Popup().setHTML(
-              `<p style="color:#000000;">${item.id}</p>`
-            )
-          )
-          .addTo(map);
-      }
-    } catch (error) {
-      console.error("Failed to load aircraft:", error);
-    }
-  };
+    map.addImage("aircraftSvg", aircraftImage.data);
 
-  loadAircraft();
+    console.log("HAS IMAGE:", map.hasImage("aircraftSvg"));
 
+    const geojsonData = await aircraftGetAction();
+
+    console.log("GEOJSON:", geojsonData);
+
+    map.addSource("aircraft", {
+      type: "geojson",
+      data: geojsonData,
+    });
+
+    console.log("SOURCE ADDED:", map.getSource("aircraft"));
+
+    map.addLayer({
+      id: "aircraft-layer",
+      type: "symbol",
+      source: "aircraft",
+     layout: {
+  "icon-image": "aircraftSvg",
+  "icon-size": 0.04,
+  "icon-rotate": ["-", ["get", "heading"], 45],
+  "icon-rotation-alignment": "map",
+}
+    });
+
+    console.log("LAYER ADDED:", map.getLayer("aircraft-layer"));
+  } catch (error) {
+    console.error("AIRCRAFT LAYER ERROR:", error);
+  }
+});
   map.on("error", ({ error }) => {
     console.error("MapLibre resource error:", error);
   });
