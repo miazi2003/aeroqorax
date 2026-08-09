@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Map, Marker, setWorkerUrl } from "maplibre-gl";
+import { Map, Marker, Popup, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import { aircraft } from "@/data/aircraft";
@@ -44,11 +44,14 @@ export function AircraftMap() {
       new Marker({
         draggable: false,
         element: createAircraftMarker(),
-        rotation: item.heading,
+        rotation: item.heading - 45,
         rotationAlignment: "map",
       })
         .setLngLat([item.longitude, item.latitude])
+        .setPopup(new Popup().setHTML(`<p style="color : #000000;">${item.id}</p>`))
         .addTo(map);
+
+    
     }
 
     map.on("error", ({ error }) => {
