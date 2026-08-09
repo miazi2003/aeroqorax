@@ -18,9 +18,11 @@ app.get("/", (req, res) => {
 
 app.get("/api/aircraft" , async(req, res)=>{
 try{
-const {data} = await axios.get("https://api.adsb.lol/v2/lat/23.8103/lon/90.4125/dist/250");
+const {data} = await axios.get("https://opendata.adsb.fi/api/v3/lat/23.8103/lon/90.4125/dist/250");
 
 const aircraftData = data.ac;
+console.log("RAW TOTAL:", aircraftData.length);
+console.log("RAW AIRCRAFT:", aircraftData);
 const normalizeData : Aircraft[] = aircraftData.filter((ac : RawAircraft)=>{
   return ac.lat !== undefined && ac.lon !== undefined
 }).map(
