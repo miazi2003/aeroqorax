@@ -31,7 +31,7 @@ const normalizeData : Aircraft[] = aircraftData.filter((ac : RawAircraft)=>{
   callsign: ac.flight?.trim(),
   registration: ac.r,
   aircraftType: ac.t,
-
+    
   latitude: ac.lat,
   longitude: ac.lon,
 
