@@ -5,11 +5,17 @@ import { createServer } from "http";
 import { Server } from "socket.io";
 import { airPlaneRouter } from "./modules/aircraft/aircraft.route.js";
 import socket from "./realtime/socket.js";
-
+import "dotenv/config";
 const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+const PORT = process.env.PORT || 5000;
+
+const CLIENT_URL = process.env.CLIENT_URL;
+
+
 
 app.get("/", (req, res) => {
   res.json({
@@ -26,7 +32,7 @@ const httpServer = createServer(app)
 
 const io = new Server(httpServer, {
   cors: {
-    origin: true,
+    origin: CLIENT_URL,
   },
 });
 
@@ -41,6 +47,6 @@ socket.on("disconnect" , ()=>{
 })
 
 
-httpServer.listen(5000, () => {
+httpServer.listen(PORT, () => {
   console.log("Server running on http://localhost:5000 now");
 });
