@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Aircraft, RawAircraft } from "../types.js";
+import type { Aircraft, RawAircraft } from "../../types/aircraft.js";
 
 export const airPlaneService = async (): Promise<Aircraft[]> => {
   try {

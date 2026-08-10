@@ -1,11 +1,10 @@
 import express from "express";
 import cors from "cors";
 import axios from "axios";
-import type { Aircraft, RawAircraft } from "./types.js";
 import { createServer } from "http";
 import { Server } from "socket.io";
-import { airPlaneRouter } from "./airplane/airplane.route.js";
-import socket from "./socket/socket.js";
+import { airPlaneRouter } from "./modules/aircraft/aircraft.route.js";
+import socket from "./realtime/socket.js";
 
 const app = express();
 

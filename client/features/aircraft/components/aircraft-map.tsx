@@ -9,9 +9,9 @@ import {
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import aircraftGeoJson from "@/utils/aircraftGeoJson";
-import socket from "@/utils/socket";
-import { Aircraft } from "@/app/types";
+import aircraftGeoJson from "@/features/aircraft/utils/aircraftGeoJson";
+import socket from "@/lib/socket";
+import { Aircraft } from "@/features/aircraft/types/aircraft";
 
 
 const DHAKA: [longitude: number, latitude: number] = [

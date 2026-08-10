@@ -1,5 +1,5 @@
 import type { Request, Response } from "express";
-import { airPlaneService } from "./airplane.service.js";
+import { airPlaneService } from "./aircraft.service.js";
 
 
 export const getAircraft = async (req : Request, res : Response) => {

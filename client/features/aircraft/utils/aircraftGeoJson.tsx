@@ -1,4 +1,4 @@
-import { Aircraft } from '@/app/types';
+import { Aircraft } from '@/features/aircraft/types/aircraft';
 import type { FeatureCollection, Point } from 'geojson';
 
 

@@ -1,4 +1,4 @@
-import aircraftGeoJson from '@/utils/aircraftGeoJson'
+import aircraftGeoJson from '@/features/aircraft/utils/aircraftGeoJson'
 import React from 'react'
 
 const aircraftGetAction = async(data : any) => {

@@ -1,6 +1,6 @@
 
 import type { Server } from 'socket.io';
-import { airPlaneService } from '../airplane/airplane.service.js';
+import { airPlaneService } from '../modules/aircraft/aircraft.service.js';
 
 
 

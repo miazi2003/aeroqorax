@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { airplaneController } from "./airplane.controller.js";
+import { airplaneController } from "./aircraft.controller.js";
 
 const router = Router()
 
