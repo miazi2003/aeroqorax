@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { GeoJSONSource, Map, setWorkerUrl } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import aircraftGetAction from "../action/aircraftGetAction";
+import socket from "@/utils/socket";
 
 // import { aircraft } from "@/data/aircraft";
 
@@ -32,7 +33,25 @@ useEffect(() => {
     zoom: MAP_ZOOM,
   });
 
-  let interval: ReturnType<typeof setInterval> | undefined;
+const handleConnect = () => {
+  console.log("Socket connected:", socket.id);
+};
+
+const handleDisconnect = (reason: string) => {
+  console.log("Socket disconnected:", reason);
+};
+
+const handleConnectError = (error: Error) => {
+  console.error("Socket connect error:", error.message);
+};
+
+socket.on("connect", handleConnect);
+socket.on("disconnect", handleDisconnect);
+socket.on("connect_error", handleConnectError);
+
+socket.connect();
+
+let interval: ReturnType<typeof setInterval> | undefined;
 
   map.on("load", async () => {
     try {
@@ -90,6 +109,14 @@ useEffect(() => {
 
   // React useEffect cleanup
   return () => {
+
+
+     socket.off("connect", handleConnect);
+  socket.off("disconnect", handleDisconnect);
+  socket.off("connect_error", handleConnectError);
+
+  socket.disconnect();
+
     if (interval) {
       clearInterval(interval);
     }
