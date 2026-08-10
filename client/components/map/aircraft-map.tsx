@@ -1,129 +1,225 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { GeoJSONSource, Map, setWorkerUrl } from "maplibre-gl";
+import {
+  GeoJSONSource,
+  Map,
+  setWorkerUrl,
+} from "maplibre-gl";
+
 import "maplibre-gl/dist/maplibre-gl.css";
-import aircraftGetAction from "../action/aircraftGetAction";
+
+import aircraftGeoJson from "@/utils/aircraftGeoJson";
 import socket from "@/utils/socket";
+import { Aircraft } from "@/app/types";
 
-// import { aircraft } from "@/data/aircraft";
 
-const DHAKA: [longitude: number, latitude: number] = [90.4125, 23.8103];
+const DHAKA: [longitude: number, latitude: number] = [
+  90.4125,
+  23.8103,
+];
+
 const MAP_ZOOM = 8;
 
-export  function AircraftMap() {
-  const containerRef = useRef<HTMLDivElement>(null);
+export function AircraftMap() {
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
-useEffect(() => {
-  const apiKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
+  useEffect(() => {
+    const apiKey =
+      process.env.NEXT_PUBLIC_MAPTILER_KEY;
 
-  if (!apiKey || !containerRef.current) {
-    if (!apiKey) {
-      console.error("NEXT_PUBLIC_MAPTILER_KEY is missing");
+    if (!apiKey || !containerRef.current) {
+      if (!apiKey) {
+        console.error(
+          "NEXT_PUBLIC_MAPTILER_KEY is missing"
+        );
+      }
+
+      return;
     }
-    return;
-  }
 
-  setWorkerUrl("/maplibre-gl-worker.mjs");
+    setWorkerUrl("/maplibre-gl-worker.mjs");
 
-  const map = new Map({
-    container: containerRef.current,
-    style: `https://api.maptiler.com/maps/hybrid-v4/style.json?key=${apiKey}`,
-    center: DHAKA,
-    zoom: MAP_ZOOM,
-  });
+    const map = new Map({
+      container: containerRef.current,
+      style: `https://api.maptiler.com/maps/hybrid-v4/style.json?key=${apiKey}`,
+      center: DHAKA,
+      zoom: MAP_ZOOM,
+    });
 
-const handleConnect = () => {
-  console.log("Socket connected:", socket.id);
-};
+    const handleConnect = () => {
+      console.log(
+        "Socket connected:",
+        socket.id
+      );
+    };
 
-const handleDisconnect = (reason: string) => {
-  console.log("Socket disconnected:", reason);
-};
+    const handleDisconnect = (
+      reason: string
+    ) => {
+      console.log(
+        "Socket disconnected:",
+        reason
+      );
+    };
 
-const handleConnectError = (error: Error) => {
-  console.error("Socket connect error:", error.message);
-};
+    const handleConnectError = (
+      error: Error
+    ) => {
+      console.error(
+        "Socket connect error:",
+        error.message
+      );
+    };
 
-socket.on("connect", handleConnect);
-socket.on("disconnect", handleDisconnect);
-socket.on("connect_error", handleConnectError);
+    const handleAircraftUpdate = (
+      data: Aircraft[]
+    ) => {
+      try {
+        const updatedGeoJson =
+          aircraftGeoJson(data);
 
-socket.connect();
+        const source =
+          map.getSource(
+            "aircraft"
+          ) as GeoJSONSource | undefined;
 
-let interval: ReturnType<typeof setInterval> | undefined;
+        if (!source) {
+          console.warn(
+            "Aircraft source is not ready yet"
+          );
+          return;
+        }
 
-  map.on("load", async () => {
-    try {
-      const aircraftImage = await map.loadImage(
-        "/airplane-svgrepo-com.png"
+        source.setData(updatedGeoJson);
+
+        console.log(
+          "AIRCRAFT UPDATED:",
+          data.length
+        );
+      } catch (error) {
+        console.error(
+          "Failed to update aircraft:",
+          error
+        );
+      }
+    };
+
+    socket.on(
+      "connect",
+      handleConnect
+    );
+
+    socket.on(
+      "disconnect",
+      handleDisconnect
+    );
+
+    socket.on(
+      "connect_error",
+      handleConnectError
+    );
+
+    socket.on(
+      "aircraft:update",
+      handleAircraftUpdate
+    );
+
+    socket.connect();
+
+    map.on("load", async () => {
+      try {
+        const aircraftImage =
+          await map.loadImage(
+            "/airplane-svgrepo-com.png"
+          );
+
+        if (!map.hasImage("aircraftSvg")) {
+          map.addImage(
+            "aircraftSvg",
+            aircraftImage.data
+          );
+        }
+
+        map.addSource("aircraft", {
+          type: "geojson",
+          data: {
+            type: "FeatureCollection",
+            features: [],
+          },
+        });
+
+        map.addLayer({
+          id: "aircraft-layer",
+          type: "symbol",
+          source: "aircraft",
+
+          layout: {
+            "icon-image": "aircraftSvg",
+            "icon-size": 0.04,
+
+            "icon-rotate": [
+              "-",
+              ["get", "heading"],
+              45,
+            ],
+
+            "icon-rotation-alignment":
+              "map",
+
+            "icon-allow-overlap": true,
+          },
+        });
+
+        console.log(
+          "Aircraft source and layer ready"
+        );
+      } catch (error) {
+        console.error(
+          "AIRCRAFT LAYER ERROR:",
+          error
+        );
+      }
+    });
+
+    map.on("error", ({ error }) => {
+      console.error(
+        "MapLibre resource error:",
+        error
+      );
+    });
+
+    return () => {
+      socket.off(
+        "connect",
+        handleConnect
       );
 
-      map.addImage("aircraftSvg", aircraftImage.data);
+      socket.off(
+        "disconnect",
+        handleDisconnect
+      );
 
-      // Initial data
-      const geojsonData = await aircraftGetAction();
+      socket.off(
+        "connect_error",
+        handleConnectError
+      );
 
-      map.addSource("aircraft", {
-        type: "geojson",
-        data: geojsonData,
-      });
+      socket.off(
+        "aircraft:update",
+        handleAircraftUpdate
+      );
 
-      map.addLayer({
-        id: "aircraft-layer",
-        type: "symbol",
-        source: "aircraft",
-        layout: {
-          "icon-image": "aircraftSvg",
-          "icon-size": 0.04,
-          "icon-rotate": ["-", ["get", "heading"], 45],
-          "icon-rotation-alignment": "map",
-        },
-      });
+      socket.disconnect();
 
-      // Live update
-      interval = setInterval(async () => {
-        try {
-          const updatedGeoJson = await aircraftGetAction();
+      map.remove();
+    };
+  }, []);
 
-          const source = map.getSource(
-            "aircraft"
-          ) as GeoJSONSource;
-
-          source.setData(updatedGeoJson);
-
-          console.log("AIRCRAFT UPDATED");
-        } catch (error) {
-          console.error("Failed to update aircraft:", error);
-        }
-      }, 5000);
-
-    } catch (error) {
-      console.error("AIRCRAFT LAYER ERROR:", error);
-    }
-  });
-
-  map.on("error", ({ error }) => {
-    console.error("MapLibre resource error:", error);
-  });
-
-  // React useEffect cleanup
-  return () => {
-
-
-     socket.off("connect", handleConnect);
-  socket.off("disconnect", handleDisconnect);
-  socket.off("connect_error", handleConnectError);
-
-  socket.disconnect();
-
-    if (interval) {
-      clearInterval(interval);
-    }
-
-    map.remove();
-  };
-}, []);
-
-  return <div ref={containerRef} className="h-screen w-full" />;
+  return (
+    <div
+      ref={containerRef}
+      className="h-screen w-full"
+    />
+  );
 }

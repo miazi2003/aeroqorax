@@ -1,15 +1,16 @@
-import axios from 'axios'
+import { Aircraft } from '@/app/types';
+import type { FeatureCollection, Point } from 'geojson';
 
 
-const aircraftGeoJson = async() => {
+const aircraftGeoJson = (data: Aircraft[]): FeatureCollection<Point> => {
 
-    const {data} = await axios.get("http://localhost:5000/api/aircraft")
+    // const {data} = await axios.get("http://localhost:5000/api/aircraft")
 
-    console.log(data , "Aircraft Data")
+    // console.log(data , "Aircraft Data")
 
- const geojsonData = {
+ const geojsonData: FeatureCollection<Point> = {
   type: "FeatureCollection",
-  features: data.map((aircraft : any) => ({
+  features: data.map((aircraft : Aircraft) => ({
     type: "Feature",
     properties: {
       id: aircraft.id,

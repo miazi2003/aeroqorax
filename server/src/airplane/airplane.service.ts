@@ -4,7 +4,7 @@ import type { Aircraft, RawAircraft } from "../types.js";
 export const airPlaneService = async (): Promise<Aircraft[]> => {
   try {
     const { data } = await axios.get(
-      "https://opendata.adsb.fi/api/v3/lat/25.2048/lon/55.2708/dist/250"
+      "https://opendata.adsb.fi/api/v3/lat/23.8103/lon/90.4125/dist/250"
     );
 
     const aircraftData = data.ac;

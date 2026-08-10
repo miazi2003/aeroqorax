@@ -4,6 +4,8 @@ import axios from "axios";
 import type { Aircraft, RawAircraft } from "./types.js";
 import { createServer } from "http";
 import { Server } from "socket.io";
+import { airPlaneRouter } from "./airplane/airplane.route.js";
+import socket from "./socket/socket.js";
 
 const app = express();
 
@@ -19,17 +21,17 @@ app.get("/", (req, res) => {
 
 //fetching aircraft data 
 
-app.get("/api/aircraft", async (req, res) => {
-
-})
+app.use("/api/aircraft", airPlaneRouter)
 
 const httpServer = createServer(app)
 
 const io = new Server(httpServer, {
   cors: {
-    origin: "http://localhost:3000",
+    origin: true,
   },
 });
+
+socket(io);
 
 io.on("connection" , (socket)=>{
 console.log("Socket Connected" , socket.id)
