@@ -7,46 +7,31 @@ import { airPlaneRouter } from "./modules/aircraft/aircraft.route.js";
 import socket from "./realtime/socket.js";
 import "dotenv/config";
 const app = express();
-
 app.use(cors());
 app.use(express.json());
-
 const PORT = Number(process.env.PORT) || 5000;
-
 const CLIENT_URL = process.env.CLIENT_URL;
-
-
-
 app.get("/", (req, res) => {
-  res.json({
-    message: "AeroQorax is running",
-  });
+    res.json({
+        message: "AeroQorax is running",
+    });
 });
-
-
 //fetching aircraft data 
-
-app.use("/api/aircraft", airPlaneRouter)
-
-const httpServer = createServer(app)
-
+app.use("/api/aircraft", airPlaneRouter);
+const httpServer = createServer(app);
 const io = new Server(httpServer, {
-  cors: {
-    origin: CLIENT_URL,
-  },
+    cors: {
+        origin: CLIENT_URL,
+    },
 });
-
 socket(io);
-
-io.on("connection" , (socket)=>{
-console.log("Socket Connected" , socket.id)
-
-socket.on("disconnect" , ()=>{
-  console.log("Socket Disconnected" , socket.id)
-})
-})
-
-
-httpServer.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
+io.on("connection", (socket) => {
+    console.log("Socket Connected", socket.id);
+    socket.on("disconnect", () => {
+        console.log("Socket Disconnected", socket.id);
+    });
 });
+httpServer.listen(PORT, "0.0.0.0", () => {
+    console.log(`Server running on port ${PORT}`);
+});
+//# sourceMappingURL=index.js.map
