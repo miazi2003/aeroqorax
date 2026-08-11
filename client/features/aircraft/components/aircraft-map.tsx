@@ -76,8 +76,9 @@ export function AircraftMap() {
     };
 
 
-   let latestAircraftData: Aircraft[] = [];
-   let lastUpdateTime = performance.now();
+    let latestAircraftData: Aircraft[] = [];
+    let displayedAircraftData: Aircraft[] = [];
+    let lastUpdateTime = performance.now();
 
     const handleAircraftUpdate = (
       data: Aircraft[]
@@ -113,61 +114,119 @@ export function AircraftMap() {
 
 
 
-      latestAircraftData = data ;
+      latestAircraftData = data;
+      if (displayedAircraftData.length === 0) {
+        displayedAircraftData = data;
+      }
       lastUpdateTime = performance.now();
 
-       console.log(
-    "LATEST AIRCRAFT DATA:",
-    latestAircraftData.length
-  );
+      console.log(
+        "LATEST AIRCRAFT DATA:",
+        latestAircraftData.length
+      );
 
     };
 
-let animationFrameId: number;
 
-const animateAircraft = (currentTime: number) => {
-  const elapsedSeconds =
-    (currentTime - lastUpdateTime) / 1000;
 
-  // console.log("ELAPSED:", elapsedSeconds);
-  const predictedAircraftData = latestAircraftData.map((aircraft) => {
-  if (
-    aircraft.groundSpeed === undefined ||
-    aircraft.heading === undefined
-  ) {
-    return aircraft;
-  }
+    const lerp = (
+      start: number,
+      end: number,
+      factor: number,
 
-  const predictedPosition = predictAircraftPosition(
-    aircraft.latitude,
-    aircraft.longitude,
-    aircraft.groundSpeed,
-    aircraft.heading,
-    elapsedSeconds
-  );
 
-  return {
-    ...aircraft,
-    latitude: predictedPosition.latitude,
-    longitude: predictedPosition.longitude,
-  };
-});
+    ) => {
+      return start + (end - start) * factor;
+    };
 
-const predictedGeoJson =
-  aircraftGeoJson(predictedAircraftData);
 
-  const source = map.getSource("aircraft") as GeoJSONSource || undefined ;
 
- if (source) {
-  source.setData(predictedGeoJson);
-}
+    let previousFrameTime = performance.now();
 
-  animationFrameId =
-    requestAnimationFrame(animateAircraft);
-};
+    let animationFrameId: number;
 
-animationFrameId =
-  requestAnimationFrame(animateAircraft);
+
+    const animateAircraft = (currentTime: number) => {
+
+      const deltaSeconds =
+        (currentTime - previousFrameTime) / 1000;
+
+      previousFrameTime = currentTime;
+
+      const correctionFactor =
+        1 - Math.exp(-6 * deltaSeconds);
+
+      const elapsedSeconds =
+        (currentTime - lastUpdateTime) / 1000;
+
+      // console.log("ELAPSED:", elapsedSeconds);
+      const predictedAircraftData = latestAircraftData.map((aircraft) => {
+        if (
+          aircraft.groundSpeed === undefined ||
+          aircraft.heading === undefined
+        ) {
+          return aircraft;
+        }
+
+        const predictedPosition = predictAircraftPosition(
+          aircraft.latitude,
+          aircraft.longitude,
+          aircraft.groundSpeed,
+          aircraft.heading,
+          elapsedSeconds
+        );
+
+        return {
+          ...aircraft,
+          latitude: predictedPosition.latitude,
+          longitude: predictedPosition.longitude,
+        };
+      });
+
+      displayedAircraftData = predictedAircraftData.map(
+        (targetAircraft) => {
+          const displayedAircraft =
+            displayedAircraftData.find(
+              (aircraft) =>
+                aircraft.id === targetAircraft.id
+            );
+
+          if (!displayedAircraft) {
+            return targetAircraft;
+          }
+
+          return {
+            ...targetAircraft,
+
+            latitude: lerp(
+              displayedAircraft.latitude,
+              targetAircraft.latitude,
+              correctionFactor),
+
+            longitude: lerp(
+              displayedAircraft.longitude,
+              targetAircraft.longitude,
+              correctionFactor
+            ),
+          };
+        }
+      );
+
+      const predictedGeoJson =
+        aircraftGeoJson(displayedAircraftData);
+
+      const source = map.getSource("aircraft") as GeoJSONSource || undefined;
+
+      if (source) {
+        source.setData(predictedGeoJson);
+      }
+
+      animationFrameId =
+        requestAnimationFrame(animateAircraft);
+    };
+
+    animationFrameId =
+      requestAnimationFrame(animateAircraft);
 
 
 
@@ -203,12 +262,12 @@ animationFrameId =
       }
 
       new Popup({
-  closeButton: true,
-  closeOnClick: true,
-  offset: 18,
-})
-  .setLngLat(e.lngLat)
-  .setHTML(`
+        closeButton: true,
+        closeOnClick: true,
+        offset: 18,
+      })
+        .setLngLat(e.lngLat)
+        .setHTML(`
     <div class="aircraft-popup">
       <div class="aircraft-popup__header">
         <div>
@@ -266,7 +325,7 @@ animationFrameId =
       </div>
     </div>
   `)
-  .addTo(map);
+        .addTo(map);
     })
 
     map.on("load", async () => {
@@ -333,7 +392,7 @@ animationFrameId =
 
     return () => {
 
-  cancelAnimationFrame(animationFrameId);
+      cancelAnimationFrame(animationFrameId);
 
 
       socket.off(
