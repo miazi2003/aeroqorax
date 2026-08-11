@@ -13,6 +13,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import aircraftGeoJson from "@/features/aircraft/utils/aircraftGeoJson";
 import socket from "@/lib/socket";
 import { Aircraft } from "@/features/aircraft/types/aircraft";
+import predictAircraftPosition from "../utils/predictAircraftPosition";
 
 
 const DHAKA: [longitude: number, latitude: number] = [
@@ -26,6 +27,7 @@ export function AircraftMap() {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+
     const apiKey =
       process.env.NEXT_PUBLIC_MAPTILER_KEY;
 
