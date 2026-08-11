@@ -75,38 +75,101 @@ export function AircraftMap() {
       );
     };
 
+
+   let latestAircraftData: Aircraft[] = [];
+   let lastUpdateTime = performance.now();
+
     const handleAircraftUpdate = (
       data: Aircraft[]
     ) => {
-      try {
-        const updatedGeoJson =
-          aircraftGeoJson(data);
+      // try {
+      //   const updatedGeoJson =
+      //     aircraftGeoJson(data);
 
-        const source =
-          map.getSource(
-            "aircraft"
-          ) as GeoJSONSource | undefined;
+      //   const source =
+      //     map.getSource(
+      //       "aircraft"
+      //     ) as GeoJSONSource | undefined;
 
-        if (!source) {
-          console.warn(
-            "Aircraft source is not ready yet"
-          );
-          return;
-        }
+      //   if (!source) {
+      //     console.warn(
+      //       "Aircraft source is not ready yet"
+      //     );
+      //     return;
+      //   }
 
-        source.setData(updatedGeoJson);
+      //   source.setData(updatedGeoJson);
 
-        console.log(
-          "AIRCRAFT UPDATED:",
-          data.length
-        );
-      } catch (error) {
-        console.error(
-          "Failed to update aircraft:",
-          error
-        );
-      }
+      //   console.log(
+      //     "AIRCRAFT UPDATED:",
+      //     data.length
+      //   );
+      // } catch (error) {
+      //   console.error(
+      //     "Failed to update aircraft:",
+      //     error
+      //   );
+      // }
+
+
+
+      latestAircraftData = data ;
+      lastUpdateTime = performance.now();
+
+       console.log(
+    "LATEST AIRCRAFT DATA:",
+    latestAircraftData.length
+  );
+
     };
+
+let animationFrameId: number;
+
+const animateAircraft = (currentTime: number) => {
+  const elapsedSeconds =
+    (currentTime - lastUpdateTime) / 1000;
+
+  // console.log("ELAPSED:", elapsedSeconds);
+  const predictedAircraftData = latestAircraftData.map((aircraft) => {
+  if (
+    aircraft.groundSpeed === undefined ||
+    aircraft.heading === undefined
+  ) {
+    return aircraft;
+  }
+
+  const predictedPosition = predictAircraftPosition(
+    aircraft.latitude,
+    aircraft.longitude,
+    aircraft.groundSpeed,
+    aircraft.heading,
+    elapsedSeconds
+  );
+
+  return {
+    ...aircraft,
+    latitude: predictedPosition.latitude,
+    longitude: predictedPosition.longitude,
+  };
+});
+
+const predictedGeoJson =
+  aircraftGeoJson(predictedAircraftData);
+
+  const source = map.getSource("aircraft") as GeoJSONSource || undefined ;
+
+ if (source) {
+  source.setData(predictedGeoJson);
+}
+
+  animationFrameId =
+    requestAnimationFrame(animateAircraft);
+};
+
+animationFrameId =
+  requestAnimationFrame(animateAircraft);
+
+
 
     socket.on(
       "connect",
@@ -269,6 +332,10 @@ export function AircraftMap() {
     });
 
     return () => {
+
+  cancelAnimationFrame(animationFrameId);
+
+
       socket.off(
         "connect",
         handleConnect
