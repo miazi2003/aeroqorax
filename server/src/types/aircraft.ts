@@ -2,7 +2,9 @@ export type Aircraft = {
   id: string;
   callsign?: string;
   registration?: string;
+
   aircraftType?: string;
+  description?: string;
 
   latitude: number;
   longitude: number;
@@ -20,7 +22,9 @@ export type RawAircraft = {
   hex: string;
   flight?: string;
   r?: string;
+
   t?: string;
+  desc?: string;
 
   lat?: number;
   lon?: number;

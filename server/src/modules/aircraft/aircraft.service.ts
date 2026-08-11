@@ -9,6 +9,13 @@ export const airPlaneService = async (): Promise<Aircraft[]> => {
     );
 
     const aircraftData = data.ac;
+    console.log(aircraftData , "new data")
+
+    const aircraft = aircraftData.find(
+  (ac: RawAircraft) => ac.flight?.trim() === "UBG338"
+);
+
+console.log("UBG338 RAW:", aircraft);
 
     const normalizeData: Aircraft[] = aircraftData
       .filter(
@@ -16,23 +23,25 @@ export const airPlaneService = async (): Promise<Aircraft[]> => {
           ac.lat !== undefined &&
           ac.lon !== undefined
       )
-      .map((ac: RawAircraft) => ({
-        id: ac.hex,
-        callsign: ac.flight?.trim(),
-        registration: ac.r,
-        aircraftType: ac.t,
+    .map((ac: RawAircraft) => ({
+  id: ac.hex,
+  callsign: ac.flight?.trim(),
+  registration: ac.r,
 
-        latitude: ac.lat,
-        longitude: ac.lon,
+  aircraftType: ac.t,
+  description: ac.desc,
 
-        altitude: ac.alt_baro,
-        groundSpeed: ac.gs,
-        heading: ac.track,
+  latitude: ac.lat!,
+  longitude: ac.lon!,
 
-        verticalRate: ac.baro_rate,
-        squawk: ac.squawk,
-        emergency: ac.emergency,
-      }));
+  altitude: ac.alt_baro,
+  groundSpeed: ac.gs,
+  heading: ac.track,
+
+  verticalRate: ac.baro_rate,
+  squawk: ac.squawk,
+  emergency: ac.emergency,
+}));
 
     return normalizeData;
   } catch (error) {

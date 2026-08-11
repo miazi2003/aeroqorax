@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import {
   GeoJSONSource,
   Map,
+  Popup,
   setWorkerUrl,
 } from "maplibre-gl";
 
@@ -126,6 +127,82 @@ export function AircraftMap() {
     );
 
     socket.connect();
+
+    map.on("click", "aircraft-layer", (e) => {
+      const features = e.features?.[0];
+
+      console.log("test feature", features?.properties)
+
+      if (!features) {
+        return
+      }
+
+      new Popup({
+  closeButton: true,
+  closeOnClick: true,
+  offset: 18,
+})
+  .setLngLat(e.lngLat)
+  .setHTML(`
+    <div class="aircraft-popup">
+      <div class="aircraft-popup__header">
+        <div>
+          <span class="aircraft-popup__label">CALLSIGN</span>
+          <h3>${features.properties.callsign || "Unknown"}</h3>
+        </div>
+
+        <span class="aircraft-popup__status">
+          LIVE
+        </span>
+      </div>
+
+      <div class="aircraft-popup__model">
+        ${features.properties.description || "Aircraft information unavailable"}
+      </div>
+
+      <div class="aircraft-popup__meta">
+        <span>${features.properties.registration || "N/A"}</span>
+        <span>•</span>
+        <span>${features.properties.aircraftType || "N/A"}</span>
+      </div>
+
+      <div class="aircraft-popup__divider"></div>
+
+      <div class="aircraft-popup__grid">
+        <div class="aircraft-popup__item">
+          <span>Altitude</span>
+          <strong>${features.properties.altitude ?? "N/A"} ft</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Ground Speed</span>
+          <strong>${features.properties.groundSpeed ?? "N/A"} kt</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Heading</span>
+          <strong>${features.properties.heading ?? "N/A"}°</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Vertical Rate</span>
+          <strong>${features.properties.verticalRate ?? "N/A"} ft/min</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Squawk</span>
+          <strong>${features.properties.squawk || "N/A"}</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Emergency</span>
+          <strong>${features.properties.emergency || "none"}</strong>
+        </div>
+      </div>
+    </div>
+  `)
+  .addTo(map);
+    })
 
     map.on("load", async () => {
       try {
