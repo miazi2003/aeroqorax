@@ -203,12 +203,15 @@ export function AircraftMap() {
       // পরবর্তী animation frame-এ target debug করা হবে
       debugAfterUpdate = true;
 
+      const visibleAircraftData =
+  getVisibleAircraft(data);
+
       const currentZoom = map.getZoom();
 
       console.log(currentZoom, "current zoom")
       if (currentZoom <= 6) {
-        displayedAircraftData = data;
-        const staticGeoJson = aircraftGeoJson(data);
+        displayedAircraftData = visibleAircraftData;
+        const staticGeoJson = aircraftGeoJson(visibleAircraftData);
         const source = map.getSource("aircraft") as GeoJSONSource | undefined;
         if (source) {
           source.setData(staticGeoJson)
@@ -345,8 +348,17 @@ export function AircraftMap() {
       );
 
 
+      const visibleAircraftData =
+  getVisibleAircraft(
+    latestAircraftData
+  );
+
+// console.log(
+//   "ANIMATING:",
+//   visibleAircraftData.length
+// );
       const predictedAircraftData =
-        latestAircraftData.map((aircraft) => {
+        visibleAircraftData.map((aircraft) => {
           if (
             aircraft.groundSpeed === undefined ||
             aircraft.heading === undefined
