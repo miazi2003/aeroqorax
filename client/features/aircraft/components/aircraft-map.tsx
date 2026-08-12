@@ -14,6 +14,7 @@ import aircraftGeoJson from "@/features/aircraft/utils/aircraftGeoJson";
 import socket from "@/lib/socket";
 import { Aircraft } from "@/features/aircraft/types/aircraft";
 import predictAircraftPosition from "../utils/predictAircraftPosition";
+import distanceBetweenPoints from "../utils/distanceBetweenPoints";
 
 
 const DHAKA: [longitude: number, latitude: number] = [
@@ -79,53 +80,132 @@ export function AircraftMap() {
     let latestAircraftData: Aircraft[] = [];
     let displayedAircraftData: Aircraft[] = [];
     let lastUpdateTime = performance.now();
+    let debugAircraftId: string | null = null;
+    let updateNumber = 0;
+    let debugAfterUpdate = false;
 
-    const handleAircraftUpdate = (
-      data: Aircraft[]
-    ) => {
-      // try {
-      //   const updatedGeoJson =
-      //     aircraftGeoJson(data);
+   const handleAircraftUpdate = (
+  data: Aircraft[]
+) => {
+  updateNumber += 1;
 
-      //   const source =
-      //     map.getSource(
-      //       "aircraft"
-      //     ) as GeoJSONSource | undefined;
+  // প্রথম update থেকে একটি aircraft debug করার জন্য নির্বাচন
+const debugAircraftStillExists =
+  data.some(
+    (aircraft) =>
+      aircraft.id === debugAircraftId
+  );
 
-      //   if (!source) {
-      //     console.warn(
-      //       "Aircraft source is not ready yet"
-      //     );
-      //     return;
-      //   }
+if (
+  (!debugAircraftId ||
+    !debugAircraftStillExists) &&
+  data.length > 0
+) {
+  debugAircraftId = data[0].id;
 
-      //   source.setData(updatedGeoJson);
+  console.log(
+    "NEW DEBUG AIRCRAFT SELECTED:",
+    debugAircraftId
+  );
+}
 
-      //   console.log(
-      //     "AIRCRAFT UPDATED:",
-      //     data.length
-      //   );
-      // } catch (error) {
-      //   console.error(
-      //     "Failed to update aircraft:",
-      //     error
-      //   );
-      // }
+  const newRealAircraft = data.find(
+    (aircraft) =>
+      aircraft.id === debugAircraftId
+  );
 
+  const previousRealAircraft =
+    latestAircraftData.find(
+      (aircraft) =>
+        aircraft.id === debugAircraftId
+    );
 
+  const currentDisplayedAircraft =
+    displayedAircraftData.find(
+      (aircraft) =>
+        aircraft.id === debugAircraftId
+    );
 
-      latestAircraftData = data;
-      if (displayedAircraftData.length === 0) {
-        displayedAircraftData = data;
-      }
-      lastUpdateTime = performance.now();
-
-      console.log(
-        "LATEST AIRCRAFT DATA:",
-        latestAircraftData.length
+  // প্রথম update-এ আগের displayed position থাকবে না,
+  // তাই সাধারণত দ্বিতীয় update থেকে এই log দেখা যাবে।
+  if (
+    newRealAircraft &&
+    currentDisplayedAircraft
+  ) {
+    const displayedToNewRealError =
+      distanceBetweenPoints(
+        currentDisplayedAircraft.latitude,
+        currentDisplayedAircraft.longitude,
+        newRealAircraft.latitude,
+        newRealAircraft.longitude
       );
 
-    };
+    console.group(
+      `AIRCRAFT UPDATE #${updateNumber}: ${debugAircraftId}`
+    );
+
+    console.log(
+      "Previous real:",
+      previousRealAircraft
+        ? {
+            latitude:
+              previousRealAircraft.latitude,
+            longitude:
+              previousRealAircraft.longitude,
+            groundSpeed:
+              previousRealAircraft.groundSpeed,
+            heading:
+              previousRealAircraft.heading,
+          }
+        : "Not available"
+    );
+
+    console.log(
+      "Displayed before update:",
+      {
+        latitude:
+          currentDisplayedAircraft.latitude,
+        longitude:
+          currentDisplayedAircraft.longitude,
+      }
+    );
+
+    console.log("New real:", {
+      latitude: newRealAircraft.latitude,
+      longitude: newRealAircraft.longitude,
+      groundSpeed:
+        newRealAircraft.groundSpeed,
+      heading: newRealAircraft.heading,
+    });
+
+    console.log(
+      "Displayed → new real error:",
+      displayedToNewRealError.toFixed(2),
+      "meters"
+    );
+
+    console.groupEnd();
+  }
+
+  // সর্বশেষ real ADS-B snapshot সংরক্ষণ
+  latestAircraftData = data;
+
+  // প্রথম data পাওয়ার সময় সরাসরি initialize
+  if (displayedAircraftData.length === 0) {
+    displayedAircraftData = data;
+  }
+
+  // নতুন snapshot থেকে prediction time restart
+  lastUpdateTime = performance.now();
+
+  // পরবর্তী animation frame-এ target debug করা হবে
+  debugAfterUpdate = true;
+
+  console.log(
+    "LATEST AIRCRAFT DATA:",
+    latestAircraftData.length
+  );
+};
 
 
 
@@ -139,36 +219,103 @@ export function AircraftMap() {
       return start + (end - start) * factor;
     };
 
+    const getCorrectionRate = (
+  positionError: number
+) => {
+  if (positionError <= 100) {
+    return 0.5;
+  }
+
+  if (positionError <= 500) {
+    return 1;
+  }
+
+  if (positionError <= 1500) {
+    return 1.5;
+  }
+
+  return 2;
+};
 
 
-    let previousFrameTime = performance.now();
+const getAlongTrackDistance = (
+  fromLatitude: number,
+  fromLongitude: number,
+  toLatitude: number,
+  toLongitude: number,
+  heading: number
+) => {
+  const metersPerDegreeLatitude = 111320;
 
-    let animationFrameId: number;
+  const averageLatitudeRad =
+    (((fromLatitude + toLatitude) / 2) *
+      Math.PI) /
+    180;
+
+  const metersPerDegreeLongitude =
+    111320 *
+    Math.cos(averageLatitudeRad);
+
+  const northDistance =
+    (toLatitude - fromLatitude) *
+    metersPerDegreeLatitude;
+
+  const eastDistance =
+    (toLongitude - fromLongitude) *
+    metersPerDegreeLongitude;
+
+  const headingRad =
+    (heading * Math.PI) / 180;
+
+  const headingNorth =
+    Math.cos(headingRad);
+
+  const headingEast =
+    Math.sin(headingRad);
+
+  return (
+    northDistance * headingNorth +
+    eastDistance * headingEast
+  );
+};
 
 
-    const animateAircraft = (currentTime: number) => {
 
-      const deltaSeconds =
-        (currentTime - previousFrameTime) / 1000;
+ let previousFrameTime = performance.now();
 
-      previousFrameTime = currentTime;
+let animationFrameId: number;
 
-      const correctionFactor =
-        1 - Math.exp(-6 * deltaSeconds);
+const animateAircraft = (
+  currentTime: number
+) => {
+  const deltaSeconds =
+    (currentTime - previousFrameTime) / 1000;
 
-      const elapsedSeconds =
-        (currentTime - lastUpdateTime) / 1000;
+  previousFrameTime = currentTime;
 
-      // console.log("ELAPSED:", elapsedSeconds);
-      const predictedAircraftData = latestAircraftData.map((aircraft) => {
-        if (
-          aircraft.groundSpeed === undefined ||
-          aircraft.heading === undefined
-        ) {
-          return aircraft;
-        }
+  // const correctionFactor =
+  //   1 - Math.exp(-6 * deltaSeconds);
 
-        const predictedPosition = predictAircraftPosition(
+const elapsedSeconds = Math.max(
+  0,
+  (currentTime - lastUpdateTime) / 1000
+);
+
+  /*
+   * Latest real ADS-B position থেকে
+   * প্রত্যেক aircraft-এর predicted position তৈরি।
+   */
+  const predictedAircraftData =
+    latestAircraftData.map((aircraft) => {
+      if (
+        aircraft.groundSpeed === undefined ||
+        aircraft.heading === undefined
+      ) {
+        return aircraft;
+      }
+
+      const predictedPosition =
+        predictAircraftPosition(
           aircraft.latitude,
           aircraft.longitude,
           aircraft.groundSpeed,
@@ -176,57 +323,323 @@ export function AircraftMap() {
           elapsedSeconds
         );
 
-        return {
-          ...aircraft,
-          latitude: predictedPosition.latitude,
-          longitude: predictedPosition.longitude,
-        };
+      return {
+        ...aircraft,
+        latitude:
+          predictedPosition.latitude,
+        longitude:
+          predictedPosition.longitude,
+      };
+    });
+
+  /*
+   * প্রত্যেক Socket update-এর পর শুধু প্রথম
+   * animation frame-এ debug information দেখাবে।
+   */
+  if (
+    debugAfterUpdate &&
+    debugAircraftId
+  ) {
+    const displayedAircraft =
+      displayedAircraftData.find(
+        (aircraft) =>
+          aircraft.id === debugAircraftId
+      );
+
+    const realAircraft =
+      latestAircraftData.find(
+        (aircraft) =>
+          aircraft.id === debugAircraftId
+      );
+
+    const predictedAircraft =
+      predictedAircraftData.find(
+        (aircraft) =>
+          aircraft.id === debugAircraftId
+      );
+
+    if (
+      displayedAircraft &&
+      realAircraft &&
+      predictedAircraft
+    ) {
+      const displayedToRealError =
+        distanceBetweenPoints(
+          displayedAircraft.latitude,
+          displayedAircraft.longitude,
+          realAircraft.latitude,
+          realAircraft.longitude
+        );
+
+      const displayedToPredictedError =
+        distanceBetweenPoints(
+          displayedAircraft.latitude,
+          displayedAircraft.longitude,
+          predictedAircraft.latitude,
+          predictedAircraft.longitude
+        );
+
+      const realToPredictedDistance =
+        distanceBetweenPoints(
+          realAircraft.latitude,
+          realAircraft.longitude,
+          predictedAircraft.latitude,
+          predictedAircraft.longitude
+        );
+        const selectedCorrectionRate =
+  getCorrectionRate(
+    displayedToRealError
+  );
+
+
+const debugAlongTrackDistance =
+  realAircraft.heading !== undefined
+    ? getAlongTrackDistance(
+        displayedAircraft.latitude,
+        displayedAircraft.longitude,
+        predictedAircraft.latitude,
+        predictedAircraft.longitude,
+        realAircraft.heading
+      )
+    : null;
+
+const debugTargetIsBehind =
+  debugAlongTrackDistance !== null &&
+  debugAlongTrackDistance < -25;
+
+
+console.log(
+  "Along-track distance:",
+  debugAlongTrackDistance !== null
+    ? `${debugAlongTrackDistance.toFixed(
+        2
+      )} meters`
+    : "Unavailable"
+);
+
+console.log(
+  "Target is behind:",
+  debugTargetIsBehind
+);
+
+
+  console.log(
+  "Selected correction rate:",
+  selectedCorrectionRate
+);
+
+      console.group(
+        `FIRST FRAME AFTER UPDATE: ${debugAircraftId}`
+      );
+
+      console.log(
+        "Elapsed:",
+        elapsedSeconds.toFixed(4),
+        "seconds"
+      );
+
+      console.log("Displayed:", {
+        latitude:
+          displayedAircraft.latitude,
+        longitude:
+          displayedAircraft.longitude,
       });
 
-      displayedAircraftData = predictedAircraftData.map(
-        (targetAircraft) => {
-          const displayedAircraft =
-            displayedAircraftData.find(
-              (aircraft) =>
-                aircraft.id === targetAircraft.id
-            );
+      console.log("New real:", {
+        latitude: realAircraft.latitude,
+        longitude:
+          realAircraft.longitude,
+        groundSpeed:
+          realAircraft.groundSpeed,
+        heading: realAircraft.heading,
+      });
 
-          if (!displayedAircraft) {
-            return targetAircraft;
-          }
-
-          return {
-            ...targetAircraft,
-
-            latitude: lerp(
-              displayedAircraft.latitude,
-              targetAircraft.latitude,
-              correctionFactor),
-
-            longitude: lerp(
-              displayedAircraft.longitude,
-              targetAircraft.longitude,
-              correctionFactor
-            ),
-          };
+      console.log(
+        "New predicted target:",
+        {
+          latitude:
+            predictedAircraft.latitude,
+          longitude:
+            predictedAircraft.longitude,
         }
       );
 
-      const predictedGeoJson =
-        aircraftGeoJson(displayedAircraftData);
+      console.log(
+        "Displayed → real:",
+        displayedToRealError.toFixed(2),
+        "meters"
+      );
 
-      const source = map.getSource("aircraft") as GeoJSONSource || undefined;
+      console.log(
+        "Displayed → predicted:",
+        displayedToPredictedError.toFixed(
+          2
+        ),
+        "meters"
+      );
 
-      if (source) {
-        source.setData(predictedGeoJson);
+      console.log(
+        "Real → predicted:",
+        realToPredictedDistance.toFixed(2),
+        "meters"
+      );
+
+      console.groupEnd();
+    } else {
+      console.warn(
+        "Debug aircraft was not found in every animation state:",
+        debugAircraftId
+      );
+    }
+
+    /*
+     * একই Socket update-এর জন্য যেন
+     * প্রতি frame-এ log না হয়।
+     */
+    debugAfterUpdate = false;
+  }
+
+  /*
+   * Displayed aircraft-কে predicted target-এর
+   * দিকে exponential smoothing দিয়ে move করানো।
+   */
+  displayedAircraftData =
+    predictedAircraftData.map(
+      (targetAircraft) => {
+        const displayedAircraft =
+          displayedAircraftData.find(
+            (aircraft) =>
+              aircraft.id ===
+              targetAircraft.id
+          );
+
+        /*
+         * নতুন aircraft হলে previous displayed
+         * position নেই, তাই target-এই initialize।
+         */
+        if (!displayedAircraft) {
+          return targetAircraft;
+        }
+
+        const realAircraft =
+          latestAircraftData.find(
+            (aircraft) =>
+              aircraft.id ===
+              targetAircraft.id
+          );
+
+        if (!realAircraft) {
+
+
+
+          
+          return targetAircraft;
+        }
+
+        const positionError =
+  distanceBetweenPoints(
+    displayedAircraft.latitude,
+    displayedAircraft.longitude,
+    realAircraft.latitude,
+    realAircraft.longitude
+  );
+
+const correctionRate =
+  getCorrectionRate(positionError);
+
+const correctionFactor =
+  1 -
+  Math.exp(
+    -correctionRate * deltaSeconds
+  );
+
+const groundSpeed =
+  targetAircraft.groundSpeed;
+
+const heading =
+  targetAircraft.heading;
+
+const hasMotionData =
+  groundSpeed !== undefined &&
+  heading !== undefined;
+
+const alongTrackDistance =
+  heading !== undefined
+    ? getAlongTrackDistance(
+        displayedAircraft.latitude,
+        displayedAircraft.longitude,
+        targetAircraft.latitude,
+        targetAircraft.longitude,
+        heading
+      )
+    : 0;
+
+const targetIsBehind =
+  hasMotionData &&
+  alongTrackDistance < -25;
+if (
+  targetIsBehind &&
+  groundSpeed !== undefined &&
+  heading !== undefined
+) {
+ 
+  const forwardPosition =
+    predictAircraftPosition(
+      displayedAircraft.latitude,
+      displayedAircraft.longitude,
+      groundSpeed,
+      heading,
+      deltaSeconds
+    );
+
+  return {
+    ...targetAircraft,
+    latitude: forwardPosition.latitude,
+    longitude: forwardPosition.longitude,
+  };
+}
+
+        return {
+          ...targetAircraft,
+
+          latitude: lerp(
+            displayedAircraft.latitude,
+            targetAircraft.latitude,
+            correctionFactor
+          ),
+
+          longitude: lerp(
+            displayedAircraft.longitude,
+            targetAircraft.longitude,
+            correctionFactor
+          ),
+        };
       }
+    );
 
-      animationFrameId =
-        requestAnimationFrame(animateAircraft);
-    };
+  const predictedGeoJson =
+    aircraftGeoJson(
+      displayedAircraftData
+    );
 
-    animationFrameId =
-      requestAnimationFrame(animateAircraft);
+  const source = map.getSource(
+    "aircraft"
+  ) as GeoJSONSource | undefined;
+
+  if (source) {
+    source.setData(predictedGeoJson);
+  }
+
+  animationFrameId =
+    requestAnimationFrame(
+      animateAircraft
+    );
+};
+
+animationFrameId =
+  requestAnimationFrame(
+    animateAircraft
+  );
 
 
 
