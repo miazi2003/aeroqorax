@@ -22,7 +22,7 @@ const DHAKA: [longitude: number, latitude: number] = [
   23.8103,
 ];
 
-const MAP_ZOOM = 8;
+const MAP_ZOOM = 7;
 
 export function AircraftMap() {
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -201,6 +201,19 @@ if (
   // পরবর্তী animation frame-এ target debug করা হবে
   debugAfterUpdate = true;
 
+  const currentZoom = map.getZoom();
+
+console.log(currentZoom , "current zoom")
+  if(currentZoom <=5){
+    displayedAircraftData = data ;
+    const staticGeoJson = aircraftGeoJson(data);
+    const source = map.getSource("aircraft") as GeoJSONSource | undefined ;
+    if(source){
+      source.setData(staticGeoJson)
+    }
+    return ;
+  }
+
   console.log(
     "LATEST AIRCRAFT DATA:",
     latestAircraftData.length
@@ -288,6 +301,19 @@ let animationFrameId: number;
 const animateAircraft = (
   currentTime: number
 ) => {
+
+const currentZoom = map.getZoom()
+
+if(currentZoom <=5){
+  previousFrameTime = currentTime
+  animationFrameId = requestAnimationFrame(animateAircraft)
+
+  return
+}
+
+
+
+
   const deltaSeconds =
     (currentTime - previousFrameTime) / 1000;
 
@@ -301,10 +327,7 @@ const elapsedSeconds = Math.max(
   (currentTime - lastUpdateTime) / 1000
 );
 
-  /*
-   * Latest real ADS-B position থেকে
-   * প্রত্যেক aircraft-এর predicted position তৈরি।
-   */
+  
   const predictedAircraftData =
     latestAircraftData.map((aircraft) => {
       if (
@@ -492,17 +515,11 @@ console.log(
       );
     }
 
-    /*
-     * একই Socket update-এর জন্য যেন
-     * প্রতি frame-এ log না হয়।
-     */
+    
     debugAfterUpdate = false;
   }
 
-  /*
-   * Displayed aircraft-কে predicted target-এর
-   * দিকে exponential smoothing দিয়ে move করানো।
-   */
+
   displayedAircraftData =
     predictedAircraftData.map(
       (targetAircraft) => {
@@ -513,10 +530,7 @@ console.log(
               targetAircraft.id
           );
 
-        /*
-         * নতুন aircraft হলে previous displayed
-         * position নেই, তাই target-এই initialize।
-         */
+      
         if (!displayedAircraft) {
           return targetAircraft;
         }
