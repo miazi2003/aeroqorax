@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import {
   GeoJSONSource,
-  Map,
+  Map as MapLibreMap,
   Popup,
   setWorkerUrl,
 } from "maplibre-gl";
@@ -44,7 +44,7 @@ export function AircraftMap() {
 
     setWorkerUrl("/maplibre-gl-worker.mjs");
 
-    const map = new Map({
+    const map = new MapLibreMap({
       container: containerRef.current,
       style: `https://api.maptiler.com/maps/hybrid-v4/style.json?key=${apiKey}`,
       center: DHAKA,
@@ -204,7 +204,7 @@ export function AircraftMap() {
       debugAfterUpdate = true;
 
       const visibleAircraftData =
-  getVisibleAircraft(data);
+        getVisibleAircraft(data);
 
       const currentZoom = map.getZoom();
 
@@ -302,11 +302,11 @@ export function AircraftMap() {
 
 
 
-    const getVisibleAircraft = (aircraftData : Aircraft[]) =>{
+    const getVisibleAircraft = (aircraftData: Aircraft[]) => {
       const bounds = map.getBounds()
-      return aircraftData.filter((aircraft)=>{
+      return aircraftData.filter((aircraft) => {
         return bounds.contains([
-          aircraft.longitude ,
+          aircraft.longitude,
           aircraft.latitude
         ])
       })
@@ -314,10 +314,18 @@ export function AircraftMap() {
 
 
 
+
+
+
     let previousFrameTime = performance.now();
 
+    const TARGET_FPS = 45;
+    const FRAME_INTERVAL = 1000 / TARGET_FPS;
+
+    let lastRenderTime = performance.now();
+
     let animationFrameId: number;
-//aircraft smooth animator
+    //aircraft smooth animator
     const animateAircraft = (
       currentTime: number
     ) => {
@@ -331,6 +339,17 @@ export function AircraftMap() {
         return
       }
 
+
+      const timeSinceLastRender =
+        currentTime - lastRenderTime;
+
+
+      if (timeSinceLastRender < FRAME_INTERVAL) {
+        animationFrameId = requestAnimationFrame(animateAircraft)
+
+        return;
+      }
+      lastRenderTime = currentTime;
 
 
 
@@ -349,14 +368,32 @@ export function AircraftMap() {
 
 
       const visibleAircraftData =
-  getVisibleAircraft(
-    latestAircraftData
-  );
+        getVisibleAircraft(
+          latestAircraftData
+        );
 
-// console.log(
-//   "ANIMATING:",
-//   visibleAircraftData.length
-// );
+      // console.log(
+      //   "ANIMATING:",
+      //   visibleAircraftData.length
+      // );
+
+
+      const latestAircraftById = new Map<string, Aircraft>(
+        latestAircraftData.map((aircraft) => [
+          aircraft.id,
+          aircraft,
+        ])
+      );
+
+      const displayedAircraftById = new Map<string, Aircraft>(
+        displayedAircraftData.map((aircraft) => [
+          aircraft.id,
+          aircraft,
+        ])
+      );
+
+
+
       const predictedAircraftData =
         visibleAircraftData.map((aircraft) => {
           if (
@@ -384,6 +421,13 @@ export function AircraftMap() {
           };
         });
 
+      const predictedAircraftById = new Map<string, Aircraft>(
+        predictedAircraftData.map((aircraft) => [
+          aircraft.id,
+          aircraft,
+        ])
+      );
+
       /*
        * প্রত্যেক Socket update-এর পর শুধু প্রথম
        * animation frame-এ debug information দেখাবে।
@@ -393,21 +437,18 @@ export function AircraftMap() {
         debugAircraftId
       ) {
         const displayedAircraft =
-          displayedAircraftData.find(
-            (aircraft) =>
-              aircraft.id === debugAircraftId
+          displayedAircraftById.get(
+            debugAircraftId
           );
 
         const realAircraft =
-          latestAircraftData.find(
-            (aircraft) =>
-              aircraft.id === debugAircraftId
+          latestAircraftById.get(
+            debugAircraftId
           );
 
         const predictedAircraft =
-          predictedAircraftData.find(
-            (aircraft) =>
-              aircraft.id === debugAircraftId
+          predictedAircraftById.get(
+            debugAircraftId
           );
 
         if (
@@ -553,10 +594,8 @@ export function AircraftMap() {
         predictedAircraftData.map(
           (targetAircraft) => {
             const displayedAircraft =
-              displayedAircraftData.find(
-                (aircraft) =>
-                  aircraft.id ===
-                  targetAircraft.id
+              displayedAircraftById.get(
+                targetAircraft.id
               );
 
 
@@ -565,10 +604,8 @@ export function AircraftMap() {
             }
 
             const realAircraft =
-              latestAircraftData.find(
-                (aircraft) =>
-                  aircraft.id ===
-                  targetAircraft.id
+              latestAircraftById.get(
+                targetAircraft.id
               );
 
             if (!realAircraft) {
@@ -708,17 +745,17 @@ export function AircraftMap() {
 
     socket.connect();
 
-    map.on("moveend" , ()=>{
+    map.on("moveend", () => {
       const visibleAircraft = getVisibleAircraft(latestAircraftData)
-       console.log(
-    "TOTAL - o:",
-    latestAircraftData.length
-  );
+      console.log(
+        "TOTAL - o:",
+        latestAircraftData.length
+      );
 
-  console.log(
-    "VISIBLE - o:",
-    visibleAircraft.length
-  );
+      console.log(
+        "VISIBLE - o:",
+        visibleAircraft.length
+      );
     })
 
 
