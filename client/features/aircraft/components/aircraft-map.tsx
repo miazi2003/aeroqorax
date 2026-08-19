@@ -16,7 +16,6 @@ import { Aircraft } from "@/features/aircraft/types/aircraft";
 import predictAircraftPosition from "../utils/predictAircraftPosition";
 import distanceBetweenPoints from "../utils/distanceBetweenPoints";
 
-
 const DHAKA: [longitude: number, latitude: number] = [
   90.4125,
   23.8103,
@@ -51,22 +50,6 @@ export function AircraftMap() {
       zoom: MAP_ZOOM,
     });
 
-    const handleConnect = () => {
-      console.log(
-        "Socket connected:",
-        socket.id
-      );
-    };
-
-    const handleDisconnect = (
-      reason: string
-    ) => {
-      console.log(
-        "Socket disconnected:",
-        reason
-      );
-    };
-
     const handleConnectError = (
       error: Error
     ) => {
@@ -80,149 +63,32 @@ export function AircraftMap() {
     let latestAircraftData: Aircraft[] = [];
     let displayedAircraftData: Aircraft[] = [];
     let lastUpdateTime = performance.now();
-    let debugAircraftId: string | null = null;
-    let updateNumber = 0;
-    let debugAfterUpdate = false;
-
-    //aircraft update handler
 
     const handleAircraftUpdate = (
       data: Aircraft[]
     ) => {
-      updateNumber += 1;
-
-      // প্রথম update থেকে একটি aircraft debug করার জন্য নির্বাচন
-      const debugAircraftStillExists =
-        data.some(
-          (aircraft) =>
-            aircraft.id === debugAircraftId
-        );
-
-      if (
-        (!debugAircraftId ||
-          !debugAircraftStillExists) &&
-        data.length > 0
-      ) {
-        debugAircraftId = data[0].id;
-
-        console.log(
-          "NEW DEBUG AIRCRAFT SELECTED:",
-          debugAircraftId
-        );
-      }
-
-      const newRealAircraft = data.find(
-        (aircraft) =>
-          aircraft.id === debugAircraftId
-      );
-
-      const previousRealAircraft =
-        latestAircraftData.find(
-          (aircraft) =>
-            aircraft.id === debugAircraftId
-        );
-
-      const currentDisplayedAircraft =
-        displayedAircraftData.find(
-          (aircraft) =>
-            aircraft.id === debugAircraftId
-        );
-
-      // প্রথম update-এ আগের displayed position থাকবে না,
-      // তাই সাধারণত দ্বিতীয় update থেকে এই log দেখা যাবে।
-      if (
-        newRealAircraft &&
-        currentDisplayedAircraft
-      ) {
-        const displayedToNewRealError =
-          distanceBetweenPoints(
-            currentDisplayedAircraft.latitude,
-            currentDisplayedAircraft.longitude,
-            newRealAircraft.latitude,
-            newRealAircraft.longitude
-          );
-
-        console.group(
-          `AIRCRAFT UPDATE #${updateNumber}: ${debugAircraftId}`
-        );
-
-        console.log(
-          "Previous real:",
-          previousRealAircraft
-            ? {
-              latitude:
-                previousRealAircraft.latitude,
-              longitude:
-                previousRealAircraft.longitude,
-              groundSpeed:
-                previousRealAircraft.groundSpeed,
-              heading:
-                previousRealAircraft.heading,
-            }
-            : "Not available"
-        );
-
-        console.log(
-          "Displayed before update:",
-          {
-            latitude:
-              currentDisplayedAircraft.latitude,
-            longitude:
-              currentDisplayedAircraft.longitude,
-          }
-        );
-
-        console.log("New real:", {
-          latitude: newRealAircraft.latitude,
-          longitude: newRealAircraft.longitude,
-          groundSpeed:
-            newRealAircraft.groundSpeed,
-          heading: newRealAircraft.heading,
-        });
-
-        console.log(
-          "Displayed → new real error:",
-          displayedToNewRealError.toFixed(2),
-          "meters"
-        );
-
-        console.groupEnd();
-      }
-
-      // সর্বশেষ real ADS-B snapshot সংরক্ষণ
       latestAircraftData = data;
 
-      // প্রথম data পাওয়ার সময় সরাসরি initialize
       if (displayedAircraftData.length === 0) {
         displayedAircraftData = data;
       }
 
-      // নতুন snapshot থেকে prediction time restart
       lastUpdateTime = performance.now();
-
-      // পরবর্তী animation frame-এ target debug করা হবে
-      debugAfterUpdate = true;
 
       const visibleAircraftData =
         getVisibleAircraft(data);
 
       const currentZoom = map.getZoom();
 
-      console.log(currentZoom, "current zoom")
       if (currentZoom <= 6) {
         displayedAircraftData = visibleAircraftData;
         const staticGeoJson = aircraftGeoJson(visibleAircraftData);
         const source = map.getSource("aircraft") as GeoJSONSource | undefined;
         if (source) {
-          source.setData(staticGeoJson)
+          source.setData(staticGeoJson);
         }
         return;
       }
-
-      console.log(
-        "LATEST AIRCRAFT DATA:",
-        latestAircraftData.length
-      );
     };
 
 
@@ -358,9 +224,6 @@ export function AircraftMap() {
 
       previousFrameTime = currentTime;
 
-      // const correctionFactor =
-      //   1 - Math.exp(-6 * deltaSeconds);
-
       const elapsedSeconds = Math.max(
         0,
         (currentTime - lastUpdateTime) / 1000
@@ -371,12 +234,6 @@ export function AircraftMap() {
         getVisibleAircraft(
           latestAircraftData
         );
-
-      // console.log(
-      //   "ANIMATING:",
-      //   visibleAircraftData.length
-      // );
-
 
       const latestAircraftById = new Map<string, Aircraft>(
         latestAircraftData.map((aircraft) => [
@@ -420,175 +277,6 @@ export function AircraftMap() {
               predictedPosition.longitude,
           };
         });
-
-      const predictedAircraftById = new Map<string, Aircraft>(
-        predictedAircraftData.map((aircraft) => [
-          aircraft.id,
-          aircraft,
-        ])
-      );
-
-      /*
-       * প্রত্যেক Socket update-এর পর শুধু প্রথম
-       * animation frame-এ debug information দেখাবে।
-       */
-      if (
-        debugAfterUpdate &&
-        debugAircraftId
-      ) {
-        const displayedAircraft =
-          displayedAircraftById.get(
-            debugAircraftId
-          );
-
-        const realAircraft =
-          latestAircraftById.get(
-            debugAircraftId
-          );
-
-        const predictedAircraft =
-          predictedAircraftById.get(
-            debugAircraftId
-          );
-
-        if (
-          displayedAircraft &&
-          realAircraft &&
-          predictedAircraft
-        ) {
-          const displayedToRealError =
-            distanceBetweenPoints(
-              displayedAircraft.latitude,
-              displayedAircraft.longitude,
-              realAircraft.latitude,
-              realAircraft.longitude
-            );
-
-          const displayedToPredictedError =
-            distanceBetweenPoints(
-              displayedAircraft.latitude,
-              displayedAircraft.longitude,
-              predictedAircraft.latitude,
-              predictedAircraft.longitude
-            );
-
-          const realToPredictedDistance =
-            distanceBetweenPoints(
-              realAircraft.latitude,
-              realAircraft.longitude,
-              predictedAircraft.latitude,
-              predictedAircraft.longitude
-            );
-          const selectedCorrectionRate =
-            getCorrectionRate(
-              displayedToRealError
-            );
-
-
-          const debugAlongTrackDistance =
-            realAircraft.heading !== undefined
-              ? getAlongTrackDistance(
-                displayedAircraft.latitude,
-                displayedAircraft.longitude,
-                predictedAircraft.latitude,
-                predictedAircraft.longitude,
-                realAircraft.heading
-              )
-              : null;
-
-          const debugTargetIsBehind =
-            debugAlongTrackDistance !== null &&
-            debugAlongTrackDistance < -25;
-
-
-          console.log(
-            "Along-track distance:",
-            debugAlongTrackDistance !== null
-              ? `${debugAlongTrackDistance.toFixed(
-                2
-              )} meters`
-              : "Unavailable"
-          );
-
-          console.log(
-            "Target is behind:",
-            debugTargetIsBehind
-          );
-
-
-          console.log(
-            "Selected correction rate:",
-            selectedCorrectionRate
-          );
-
-          console.group(
-            `FIRST FRAME AFTER UPDATE: ${debugAircraftId}`
-          );
-
-          console.log(
-            "Elapsed:",
-            elapsedSeconds.toFixed(4),
-            "seconds"
-          );
-
-          console.log("Displayed:", {
-            latitude:
-              displayedAircraft.latitude,
-            longitude:
-              displayedAircraft.longitude,
-          });
-
-          console.log("New real:", {
-            latitude: realAircraft.latitude,
-            longitude:
-              realAircraft.longitude,
-            groundSpeed:
-              realAircraft.groundSpeed,
-            heading: realAircraft.heading,
-          });
-
-          console.log(
-            "New predicted target:",
-            {
-              latitude:
-                predictedAircraft.latitude,
-              longitude:
-                predictedAircraft.longitude,
-            }
-          );
-
-          console.log(
-            "Displayed → real:",
-            displayedToRealError.toFixed(2),
-            "meters"
-          );
-
-          console.log(
-            "Displayed → predicted:",
-            displayedToPredictedError.toFixed(
-              2
-            ),
-            "meters"
-          );
-
-          console.log(
-            "Real → predicted:",
-            realToPredictedDistance.toFixed(2),
-            "meters"
-          );
-
-          console.groupEnd();
-        } else {
-          console.warn(
-            "Debug aircraft was not found in every animation state:",
-            debugAircraftId
-          );
-        }
-
-
-        debugAfterUpdate = false;
-      }
-
 
       displayedAircraftData =
         predictedAircraftData.map(
@@ -724,16 +412,6 @@ export function AircraftMap() {
 
 
     socket.on(
-      "connect",
-      handleConnect
-    );
-
-    socket.on(
-      "disconnect",
-      handleDisconnect
-    );
-
-    socket.on(
       "connect_error",
       handleConnectError
     );
@@ -745,27 +423,8 @@ export function AircraftMap() {
 
     socket.connect();
 
-    map.on("moveend", () => {
-      const visibleAircraft = getVisibleAircraft(latestAircraftData)
-      console.log(
-        "TOTAL - o:",
-        latestAircraftData.length
-      );
-
-      console.log(
-        "VISIBLE - o:",
-        visibleAircraft.length
-      );
-    })
-
-
-
-
-
     map.on("click", "aircraft-layer", (e) => {
       const features = e.features?.[0];
-
-      console.log("test feature", features?.properties)
 
       if (!features) {
         return
@@ -882,9 +541,6 @@ export function AircraftMap() {
           },
         });
 
-        console.log(
-          "Aircraft source and layer ready"
-        );
       } catch (error) {
         console.error(
           "AIRCRAFT LAYER ERROR:",
@@ -904,16 +560,6 @@ export function AircraftMap() {
 
       cancelAnimationFrame(animationFrameId);
 
-
-      socket.off(
-        "connect",
-        handleConnect
-      );
-
-      socket.off(
-        "disconnect",
-        handleDisconnect
-      );
 
       socket.off(
         "connect_error",
