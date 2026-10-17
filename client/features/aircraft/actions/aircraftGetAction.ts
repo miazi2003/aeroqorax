@@ -1,9 +1,9 @@
-import aircraftGeoJson from '@/features/aircraft/utils/aircraftGeoJson'
-import React from 'react'
+import aircraftGeoJson from "@/features/aircraft/utils/aircraftGeoJson";
+import type { Aircraft } from "@/features/aircraft/types/aircraft";
 
-const aircraftGetAction = async(data : any) => {
-    const aircraftData = await aircraftGeoJson(data) 
- return aircraftData
-}
+const aircraftGetAction = async (data: Aircraft[]) => {
+  const aircraftData = aircraftGeoJson(data);
+  return aircraftData;
+};
 
-export default aircraftGetAction
+export default aircraftGetAction;

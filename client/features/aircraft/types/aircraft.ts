@@ -1,6 +1,7 @@
 export type Aircraft = {
   id: string;
   callsign?: string;
+  flightNumber?: string;
   registration?: string;
 
   aircraftType?: string;
@@ -17,6 +18,20 @@ export type Aircraft = {
   squawk?: string;
   emergency?: string;
 };
+
+export interface AircraftSearchMeta {
+  query: string;
+  total: number;
+  limit: number;
+  source: string;
+  timestamp: number;
+}
+
+export interface AircraftSearchResponse {
+  success: boolean;
+  data: Aircraft[];
+  meta: AircraftSearchMeta;
+}
 
 export type RawAircraft = {
   hex: string;

@@ -108,6 +108,12 @@ body {
   color: #4ade80;
 }
 
+.aircraft-popup__status--stale {
+  border-color: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+}
+
 .aircraft-popup__model {
   margin-top: 10px;
   font-size: 13px;

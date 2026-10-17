@@ -10,6 +10,7 @@ import {
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
+import { AircraftSearch } from "./aircraft-search";
 import aircraftGeoJson from "@/features/aircraft/utils/aircraftGeoJson";
 import socket from "@/lib/socket";
 import { Aircraft } from "@/features/aircraft/types/aircraft";
@@ -23,8 +24,101 @@ const DHAKA: [longitude: number, latitude: number] = [
 
 const MAP_ZOOM = 8;
 
+function renderAircraftPopupHTML(
+  aircraft: Partial<Aircraft> & Record<string, unknown>,
+  isLive = true
+): string {
+  const callsign = aircraft.callsign || aircraft.flightNumber || "Unknown";
+  const model = aircraft.description || "Aircraft information unavailable";
+  const registration = aircraft.registration || "N/A";
+  const type = aircraft.aircraftType || "N/A";
+  const altitude =
+    aircraft.altitude !== undefined && aircraft.altitude !== null
+      ? `${aircraft.altitude} ft`
+      : "N/A";
+  const speed =
+    aircraft.groundSpeed !== undefined && aircraft.groundSpeed !== null
+      ? `${aircraft.groundSpeed} kt`
+      : "N/A";
+  const heading =
+    aircraft.heading !== undefined && aircraft.heading !== null
+      ? `${aircraft.heading}°`
+      : "N/A";
+  const vRate =
+    aircraft.verticalRate !== undefined && aircraft.verticalRate !== null
+      ? `${aircraft.verticalRate} ft/min`
+      : "N/A";
+  const squawk = aircraft.squawk || "N/A";
+  const emergency = aircraft.emergency || "none";
+
+  const statusClass = isLive
+    ? "aircraft-popup__status"
+    : "aircraft-popup__status aircraft-popup__status--stale";
+  const statusText = isLive ? "LIVE" : "SIGNAL LOST";
+
+  return `
+    <div class="aircraft-popup">
+      <div class="aircraft-popup__header">
+        <div>
+          <span class="aircraft-popup__label">CALLSIGN</span>
+          <h3>${callsign}</h3>
+        </div>
+
+        <span class="${statusClass}">
+          ${statusText}
+        </span>
+      </div>
+
+      <div class="aircraft-popup__model">
+        ${model}
+      </div>
+
+      <div class="aircraft-popup__meta">
+        <span>${registration}</span>
+        <span>•</span>
+        <span>${type}</span>
+      </div>
+
+      <div class="aircraft-popup__divider"></div>
+
+      <div class="aircraft-popup__grid">
+        <div class="aircraft-popup__item">
+          <span>Altitude</span>
+          <strong>${altitude}</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Ground Speed</span>
+          <strong>${speed}</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Heading</span>
+          <strong>${heading}</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Vertical Rate</span>
+          <strong>${vRate}</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Squawk</span>
+          <strong>${squawk}</strong>
+        </div>
+
+        <div class="aircraft-popup__item">
+          <span>Emergency</span>
+          <strong>${emergency}</strong>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 export function AircraftMap() {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const selectAircraftRef = useRef<((aircraft: Aircraft) => void) | null>(null);
 
   useEffect(() => {
 
@@ -63,6 +157,11 @@ export function AircraftMap() {
     let latestAircraftData: Aircraft[] = [];
     let displayedAircraftData: Aircraft[] = [];
     let lastUpdateTime = performance.now();
+    let debugAircraftId: string | null = null;
+    let updateNumber = 0;
+    let debugAfterUpdate = false;
+
+    //aircraft update handler
 
     const handleAircraftUpdate = (
       data: Aircraft[]
@@ -89,6 +188,11 @@ export function AircraftMap() {
         }
         return;
       }
+
+      console.log(
+        "LATEST AIRCRAFT DATA:",
+        latestAircraftData.length
+      );
     };
 
 
@@ -398,6 +502,16 @@ export function AircraftMap() {
         source.setData(predictedGeoJson);
       }
 
+      // Smoothly translate active popup position alongside animated aircraft
+      if (selectedAircraftId && activePopup && activePopup.isOpen()) {
+        const displayedAc = displayedAircraftData.find(
+          (ac) => ac.id === selectedAircraftId
+        );
+        if (displayedAc) {
+          activePopup.setLngLat([displayedAc.longitude, displayedAc.latitude]);
+        }
+      }
+
       animationFrameId =
         requestAnimationFrame(
           animateAircraft
@@ -425,6 +539,8 @@ export function AircraftMap() {
 
     map.on("click", "aircraft-layer", (e) => {
       const features = e.features?.[0];
+
+      console.log("test feature", features?.properties)
 
       if (!features) {
         return
@@ -557,9 +673,24 @@ export function AircraftMap() {
     });
 
     return () => {
+      if (activePopup) {
+        activePopup.remove();
+        activePopup = null;
+      }
+      selectAircraftRef.current = null;
 
       cancelAnimationFrame(animationFrameId);
 
+
+      socket.off(
+        "connect",
+        handleConnect
+      );
+
+      socket.off(
+        "disconnect",
+        handleDisconnect
+      );
 
       socket.off(
         "connect_error",
@@ -578,9 +709,20 @@ export function AircraftMap() {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="h-screen w-full"
-    />
+    <div className="relative h-screen w-full overflow-hidden">
+      {/* Floating Advanced Flight Search */}
+      <div className="absolute top-4 left-4 z-20">
+        <AircraftSearch
+          onSelectAircraft={(aircraft) => {
+            selectAircraftRef.current?.(aircraft);
+          }}
+        />
+      </div>
+
+      <div
+        ref={containerRef}
+        className="h-full w-full"
+      />
+    </div>
   );
 }

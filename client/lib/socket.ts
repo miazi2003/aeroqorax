@@ -1,11 +1,8 @@
-import React from 'react'
-import { io } from 'socket.io-client'
+import { io } from "socket.io-client";
 
-
-const socket =  io(process.env.NEXT_PUBLIC_SOCKET_URL,  {
+const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL, {
   autoConnect: false,
   transports: ["websocket"],
-})
+});
 
-
-export default socket
+export default socket;

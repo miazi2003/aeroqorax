@@ -1,39 +1,54 @@
 export type Aircraft = {
   id: string;
-  callsign?: string;
-  registration?: string;
+  callsign?: string | undefined;
+  flightNumber?: string | undefined;
+  registration?: string | undefined;
 
-  aircraftType?: string;
-  description?: string;
+  aircraftType?: string | undefined;
+  description?: string | undefined;
 
   latitude: number;
   longitude: number;
 
-  altitude?: number | string;
-  groundSpeed?: number;
-  heading?: number;
+  altitude?: number | string | undefined;
+  groundSpeed?: number | undefined;
+  heading?: number | undefined;
 
-  verticalRate?: number;
-  squawk?: string;
-  emergency?: string;
+  verticalRate?: number | undefined;
+  squawk?: string | undefined;
+  emergency?: string | undefined;
 };
+
+export interface AircraftSearchMeta {
+  query: string;
+  total: number;
+  limit: number;
+  source: "live-snapshot" | "cache" | "fallback";
+  timestamp: number;
+}
+
+export interface AircraftSearchResponse {
+  success: boolean;
+  data: Aircraft[];
+  meta: AircraftSearchMeta;
+}
 
 export type RawAircraft = {
   hex: string;
-  flight?: string;
-  r?: string;
+  flight?: string | undefined;
+  r?: string | undefined;
 
-  t?: string;
-  desc?: string;
+  t?: string | undefined;
+  desc?: string | undefined;
 
-  lat?: number;
-  lon?: number;
+  lat?: number | undefined;
+  lon?: number | undefined;
 
-  alt_baro?: number | string;
-  gs?: number;
-  track?: number;
-  baro_rate?: number;
+  alt_baro?: number | string | undefined;
+  gs?: number | undefined;
+  track?: number | undefined;
+  baro_rate?: number | undefined;
 
-  squawk?: string;
-  emergency?: string;
+  squawk?: string | undefined;
+  emergency?: string | undefined;
 };

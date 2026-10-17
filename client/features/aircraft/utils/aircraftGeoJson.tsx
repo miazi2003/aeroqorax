@@ -16,6 +16,7 @@ const aircraftGeoJson = (
 
         // Aircraft identity
         callsign: aircraft.callsign,
+        flightNumber: aircraft.flightNumber,
         registration: aircraft.registration,
         aircraftType: aircraft.aircraftType,
         description: aircraft.description,
