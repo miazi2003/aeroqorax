@@ -12,6 +12,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import { AircraftSearch } from "./aircraft-search";
 import { AircraftFilters } from "./aircraft-filters";
+import { AircraftDetailsSidebar } from "./aircraft-details-sidebar";
 import aircraftGeoJson from "@/features/aircraft/utils/aircraftGeoJson";
 import socket from "@/lib/socket";
 import { Aircraft } from "@/features/aircraft/types/aircraft";
@@ -20,11 +21,21 @@ import distanceBetweenPoints from "../utils/distanceBetweenPoints";
 import {
   filterAircraft,
   getAvailableFilterOptions,
-  isAircraftMatchingFilter,
   createDefaultFilterCriteria,
   type AircraftFilterCriteria,
   type DynamicFilterOptions,
 } from "../utils/filterAircraft";
+import {
+  escapeHtml,
+  formatAltitude,
+  formatSpeed,
+  isValidCoordinate,
+} from "../utils/formatAircraftTelemetry";
+import {
+  selectAircraftState,
+  updateSelectedAircraftOnSnapshot,
+  type SelectedAircraftState,
+} from "../utils/selectedAircraftCoordinator";
 
 const DHAKA: [longitude: number, latitude: number] = [
   90.4125,
@@ -33,33 +44,23 @@ const DHAKA: [longitude: number, latitude: number] = [
 
 const MAP_ZOOM = 8;
 
+/**
+ * Renders a concise, XSS-safe popup summarizing the selected aircraft.
+ * Detailed multi-category telemetry is displayed in the primary details sidebar.
+ */
 function renderAircraftPopupHTML(
-  aircraft: Partial<Aircraft> & Record<string, unknown>,
+  aircraft: Partial<Aircraft> & { id: string },
   isLive = true,
   isFilterException = false
 ): string {
-  const callsign = aircraft.callsign || aircraft.flightNumber || "Unknown";
-  const model = aircraft.description || "Aircraft information unavailable";
-  const registration = aircraft.registration || "N/A";
-  const type = aircraft.aircraftType || "N/A";
-  const altitude =
-    aircraft.altitude !== undefined && aircraft.altitude !== null
-      ? `${aircraft.altitude} ft`
-      : "N/A";
-  const speed =
-    aircraft.groundSpeed !== undefined && aircraft.groundSpeed !== null
-      ? `${aircraft.groundSpeed} kt`
-      : "N/A";
-  const heading =
-    aircraft.heading !== undefined && aircraft.heading !== null
-      ? `${aircraft.heading}°`
-      : "N/A";
-  const vRate =
-    aircraft.verticalRate !== undefined && aircraft.verticalRate !== null
-      ? `${aircraft.verticalRate} ft/min`
-      : "N/A";
-  const squawk = aircraft.squawk || "N/A";
-  const emergency = aircraft.emergency || "none";
+  const callsign = escapeHtml(
+    aircraft.callsign || aircraft.flightNumber || aircraft.id.toUpperCase()
+  );
+  const type = escapeHtml(aircraft.aircraftType || "Unknown Type");
+  const airline = aircraft.airline ? escapeHtml(aircraft.airline) : "";
+
+  const alt = formatAltitude(aircraft.altitude);
+  const spd = formatSpeed(aircraft.groundSpeed);
 
   const statusClass = isLive
     ? "aircraft-popup__status"
@@ -70,12 +71,17 @@ function renderAircraftPopupHTML(
     ? `<div class="aircraft-popup__filter-warning">Hidden by Active Filters</div>`
     : "";
 
+  const airlineHTML = airline
+    ? `<div class="text-[11px] text-slate-300 font-medium truncate mt-0.5">${airline}</div>`
+    : "";
+
   return `
     <div class="aircraft-popup">
       <div class="aircraft-popup__header">
         <div>
-          <span class="aircraft-popup__label">CALLSIGN</span>
-          <h3>${callsign}</h3>
+          <span class="aircraft-popup__label">AIRCRAFT</span>
+          <h3 class="text-base font-bold text-white tracking-tight">${callsign}</h3>
+          ${airlineHTML}
         </div>
 
         <span class="${statusClass}">
@@ -83,13 +89,7 @@ function renderAircraftPopupHTML(
         </span>
       </div>
 
-      <div class="aircraft-popup__model">
-        ${model}
-      </div>
-
       <div class="aircraft-popup__meta">
-        <span>${registration}</span>
-        <span>•</span>
         <span>${type}</span>
       </div>
 
@@ -100,33 +100,17 @@ function renderAircraftPopupHTML(
       <div class="aircraft-popup__grid">
         <div class="aircraft-popup__item">
           <span>Altitude</span>
-          <strong>${altitude}</strong>
+          <strong>${escapeHtml(alt.text)} ${escapeHtml(alt.unit)}</strong>
         </div>
 
         <div class="aircraft-popup__item">
           <span>Ground Speed</span>
-          <strong>${speed}</strong>
+          <strong>${escapeHtml(spd.text)} ${escapeHtml(spd.unit)}</strong>
         </div>
+      </div>
 
-        <div class="aircraft-popup__item">
-          <span>Heading</span>
-          <strong>${heading}</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Vertical Rate</span>
-          <strong>${vRate}</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Squawk</span>
-          <strong>${squawk}</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Emergency</span>
-          <strong>${emergency}</strong>
-        </div>
+      <div class="mt-2.5 pt-1.5 border-t border-slate-800 text-[10px] text-sky-400 font-medium flex items-center justify-between">
+        <span>Full Details in Sidebar →</span>
       </div>
     </div>
   `;
@@ -134,13 +118,23 @@ function renderAircraftPopupHTML(
 
 export function AircraftMap() {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const selectAircraftRef = useRef<((aircraft: Aircraft) => void) | null>(null);
+  const selectAircraftRef = useRef<
+    ((aircraftOrId: Aircraft | string, flyTo?: boolean) => void) | null
+  >(null);
+  const deselectAircraftRef = useRef<(() => void) | null>(null);
+  const focusAircraftRef = useRef<((aircraft: Aircraft) => void) | null>(null);
   const updateMapFiltersRef = useRef<(() => void) | null>(null);
 
   const [criteria, setCriteria] = useState<AircraftFilterCriteria>(
     createDefaultFilterCriteria
   );
   const criteriaRef = useRef<AircraftFilterCriteria>(criteria);
+
+  const [selectedState, setSelectedState] =
+    useState<SelectedAircraftState | null>(null);
+  const selectedStateRef = useRef<SelectedAircraftState | null>(null);
+
+  const [socketConnected, setSocketConnected] = useState<boolean>(true);
 
   const [counts, setCounts] = useState<{
     total: number;
@@ -175,6 +169,14 @@ export function AircraftMap() {
     updateMapFiltersRef.current?.();
   }, []);
 
+  const handleCloseSidebar = useCallback(() => {
+    deselectAircraftRef.current?.();
+  }, []);
+
+  const handleFocusAircraft = useCallback((ac: Aircraft) => {
+    focusAircraftRef.current?.(ac);
+  }, []);
+
   useEffect(() => {
     const apiKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
 
@@ -195,15 +197,16 @@ export function AircraftMap() {
     });
 
     const handleConnect = () => {
-      console.log("Socket connected:", socket.id);
+      setSocketConnected(true);
     };
 
-    const handleDisconnect = (reason: string) => {
-      console.log("Socket disconnected:", reason);
+    const handleDisconnect = () => {
+      setSocketConnected(false);
     };
 
     const handleConnectError = (error: Error) => {
       console.error("Socket connect error:", error.message);
+      setSocketConnected(false);
     };
 
     let latestAircraftData: Aircraft[] = [];
@@ -242,18 +245,35 @@ export function AircraftMap() {
         source.setData(aircraftGeoJson(visibleAircraftData));
       }
 
-      if (selectedAircraftId && activePopup && activePopup.isOpen()) {
-        const targetAc = latestAircraftData.find(
-          (ac) => ac.id === selectedAircraftId
+      // Synchronize selection exception status with sidebar and popup
+      if (selectedAircraftId && selectedStateRef.current) {
+        const isException = Boolean(
+          filterRes.selectedExceptionAircraft &&
+            filterRes.selectedExceptionAircraft.id === selectedAircraftId
         );
-        if (targetAc) {
-          const isException = Boolean(
-            filterRes.selectedExceptionAircraft &&
-              filterRes.selectedExceptionAircraft.id === selectedAircraftId
-          );
-          activePopup.setHTML(
-            renderAircraftPopupHTML(targetAc, true, isException)
-          );
+
+        if (selectedStateRef.current.isFilterException !== isException) {
+          const updatedState = {
+            ...selectedStateRef.current,
+            isFilterException: isException,
+          };
+          selectedStateRef.current = updatedState;
+          setSelectedState(updatedState);
+        }
+
+        if (activePopup && activePopup.isOpen()) {
+          const targetAc =
+            latestAircraftData.find((ac) => ac.id === selectedAircraftId) ||
+            selectedStateRef.current.aircraft;
+          if (targetAc) {
+            activePopup.setHTML(
+              renderAircraftPopupHTML(
+                targetAc,
+                selectedStateRef.current.isLive,
+                isException
+              )
+            );
+          }
         }
       }
     };
@@ -295,24 +315,39 @@ export function AircraftMap() {
         if (source) {
           source.setData(staticGeoJson);
         }
-        return;
       }
 
-      // Keep selected aircraft popup synchronized with live telemetry
-      if (selectedAircraftId && activePopup && activePopup.isOpen()) {
-        const liveAc = data.find((ac) => ac.id === selectedAircraftId);
-        if (liveAc) {
-          const isException = Boolean(
-            filterRes.selectedExceptionAircraft &&
-              filterRes.selectedExceptionAircraft.id === selectedAircraftId
-          );
-          activePopup
-            .setLngLat([liveAc.longitude, liveAc.latitude])
-            .setHTML(renderAircraftPopupHTML(liveAc, true, isException));
-        } else {
-          activePopup.setHTML(
-            renderAircraftPopupHTML({ id: selectedAircraftId }, false)
-          );
+      // Synchronize selected aircraft details and popup with latest live snapshot
+      if (selectedAircraftId) {
+        const updatedSelectedState = updateSelectedAircraftOnSnapshot(
+          selectedStateRef.current,
+          data,
+          criteriaRef.current
+        );
+        selectedStateRef.current = updatedSelectedState;
+        setSelectedState(updatedSelectedState);
+
+        if (activePopup && activePopup.isOpen()) {
+          if (updatedSelectedState?.isLive) {
+            const liveAc = updatedSelectedState.aircraft;
+            activePopup
+              .setLngLat([liveAc.longitude, liveAc.latitude])
+              .setHTML(
+                renderAircraftPopupHTML(
+                  liveAc,
+                  true,
+                  updatedSelectedState.isFilterException
+                )
+              );
+          } else {
+            activePopup.setHTML(
+              renderAircraftPopupHTML(
+                updatedSelectedState?.aircraft || { id: selectedAircraftId },
+                false,
+                false
+              )
+            );
+          }
         }
       }
     };
@@ -353,97 +388,44 @@ export function AircraftMap() {
       return northDistance * headingNorth + eastDistance * headingEast;
     };
 
-    let previousFrameTime = performance.now();
-    const TARGET_FPS = 45;
-    const FRAME_INTERVAL = 1000 / TARGET_FPS;
-    let lastRenderTime = performance.now();
     let animationFrameId: number;
 
-    const animateAircraft = (currentTime: number) => {
+    const animateAircraft = () => {
       const currentZoom = map.getZoom();
 
       if (currentZoom <= 6) {
-        previousFrameTime = currentTime;
         animationFrameId = requestAnimationFrame(animateAircraft);
         return;
       }
 
-      const timeSinceLastRender = currentTime - lastRenderTime;
+      const now = performance.now();
+      const elapsedSeconds = Math.max(0, (now - lastUpdateTime) / 1000);
+      const deltaSeconds = Math.min(elapsedSeconds, 1);
 
-      if (timeSinceLastRender < FRAME_INTERVAL) {
-        animationFrameId = requestAnimationFrame(animateAircraft);
-        return;
-      }
-      lastRenderTime = currentTime;
-
-      const deltaSeconds = (currentTime - previousFrameTime) / 1000;
-      previousFrameTime = currentTime;
-
-      const elapsedSeconds = Math.max(
-        0,
-        (currentTime - lastUpdateTime) / 1000
-      );
-
-      const visibleAircraftData = getVisibleAircraft(filteredAircraftData);
-
-      const latestAircraftById = new Map<string, Aircraft>(
-        filteredAircraftData.map((aircraft) => [aircraft.id, aircraft])
-      );
-
-      const displayedAircraftById = new Map<string, Aircraft>(
-        displayedAircraftData.map((aircraft) => [aircraft.id, aircraft])
-      );
-
-      const predictedAircraftData = visibleAircraftData.map((aircraft) => {
-        if (
-          aircraft.groundSpeed === undefined ||
-          aircraft.heading === undefined
-        ) {
-          return aircraft;
-        }
-
-        const predictedPosition = predictAircraftPosition(
-          aircraft.latitude,
-          aircraft.longitude,
-          aircraft.groundSpeed,
-          aircraft.heading,
-          elapsedSeconds
-        );
-
-        return {
-          ...aircraft,
-          latitude: predictedPosition.latitude,
-          longitude: predictedPosition.longitude,
-        };
+      const targetMap = new Map<string, Aircraft>();
+      filteredAircraftData.forEach((aircraft) => {
+        targetMap.set(aircraft.id, aircraft);
       });
 
-      displayedAircraftData = predictedAircraftData.map((targetAircraft) => {
-        const displayedAircraft = displayedAircraftById.get(targetAircraft.id);
+      displayedAircraftData = displayedAircraftData.map((displayedAircraft) => {
+        const targetAircraft = targetMap.get(displayedAircraft.id);
 
-        if (!displayedAircraft) {
-          return targetAircraft;
-        }
-
-        const realAircraft = latestAircraftById.get(targetAircraft.id);
-
-        if (!realAircraft) {
-          return targetAircraft;
+        if (!targetAircraft) {
+          return displayedAircraft;
         }
 
         const positionError = distanceBetweenPoints(
           displayedAircraft.latitude,
           displayedAircraft.longitude,
-          realAircraft.latitude,
-          realAircraft.longitude
+          targetAircraft.latitude,
+          targetAircraft.longitude
         );
 
         const correctionRate = getCorrectionRate(positionError);
-        const correctionFactor = 1 - Math.exp(-correctionRate * deltaSeconds);
+        const correctionFactor = Math.min(1, deltaSeconds * correctionRate);
 
         const groundSpeed = targetAircraft.groundSpeed;
         const heading = targetAircraft.heading;
-        const hasMotionData =
-          groundSpeed !== undefined && heading !== undefined;
 
         const alongTrackDistance =
           heading !== undefined
@@ -456,7 +438,8 @@ export function AircraftMap() {
               )
             : 0;
 
-        const targetIsBehind = hasMotionData && alongTrackDistance < -25;
+        const targetIsBehind = alongTrackDistance < -50;
+
         if (
           targetIsBehind &&
           groundSpeed !== undefined &&
@@ -515,6 +498,31 @@ export function AircraftMap() {
 
     animationFrameId = requestAnimationFrame(animateAircraft);
 
+    const deselectAircraft = () => {
+      selectedAircraftId = null;
+      selectedStateRef.current = null;
+      setSelectedState(null);
+
+      if (activePopup) {
+        activePopup.remove();
+        activePopup = null;
+      }
+
+      applyFilters();
+    };
+    deselectAircraftRef.current = deselectAircraft;
+
+    const focusAircraft = (ac: Aircraft) => {
+      if (isValidCoordinate(ac.latitude, ac.longitude)) {
+        map.flyTo({
+          center: [ac.longitude, ac.latitude],
+          zoom: Math.max(map.getZoom(), 10),
+          essential: true,
+        });
+      }
+    };
+    focusAircraftRef.current = focusAircraft;
+
     const selectAircraft = (
       aircraftOrId: Aircraft | string,
       flyTo = true
@@ -530,13 +538,18 @@ export function AircraftMap() {
 
       if (!targetAircraft) return;
 
-      const isMatching = isAircraftMatchingFilter(
+      const newState = selectAircraftState(
         targetAircraft,
+        latestAircraftData,
         criteriaRef.current
       );
-      const isFilterException = !isMatching;
+      selectedStateRef.current = newState;
+      setSelectedState(newState);
 
-      if (flyTo) {
+      if (
+        flyTo &&
+        isValidCoordinate(targetAircraft.latitude, targetAircraft.longitude)
+      ) {
         map.flyTo({
           center: [targetAircraft.longitude, targetAircraft.latitude],
           zoom: Math.max(map.getZoom(), 10),
@@ -544,38 +557,42 @@ export function AircraftMap() {
         });
       }
 
-      if (!activePopup) {
-        activePopup = new Popup({
-          closeButton: true,
-          closeOnClick: true,
-          offset: 18,
-        });
-        activePopup.on("close", () => {
-          selectedAircraftId = null;
-          activePopup = null;
-          updateMapFiltersRef.current?.();
-        });
-      }
+      if (
+        isValidCoordinate(targetAircraft.latitude, targetAircraft.longitude)
+      ) {
+        if (!activePopup) {
+          activePopup = new Popup({
+            closeButton: true,
+            closeOnClick: false,
+            offset: 18,
+          });
+          activePopup.on("close", () => {
+            activePopup = null;
+          });
+        }
 
-      activePopup
-        .setLngLat([targetAircraft.longitude, targetAircraft.latitude])
-        .setHTML(
-          renderAircraftPopupHTML(targetAircraft, true, isFilterException)
-        );
+        activePopup
+          .setLngLat([targetAircraft.longitude, targetAircraft.latitude])
+          .setHTML(
+            renderAircraftPopupHTML(
+              targetAircraft,
+              true,
+              Boolean(newState?.isFilterException)
+            )
+          );
 
-      if (!activePopup.isOpen()) {
-        activePopup.addTo(map);
+        if (!activePopup.isOpen()) {
+          activePopup.addTo(map);
+        }
       }
 
       // If aircraft was hidden by filters, re-apply so it is rendered on map as an exception
-      if (isFilterException) {
+      if (newState?.isFilterException) {
         updateMapFiltersRef.current?.();
       }
     };
 
-    selectAircraftRef.current = (aircraft: Aircraft) => {
-      selectAircraft(aircraft, true);
-    };
+    selectAircraftRef.current = selectAircraft;
 
     socket.on("connect", handleConnect);
     socket.on("disconnect", handleDisconnect);
@@ -641,6 +658,8 @@ export function AircraftMap() {
         activePopup = null;
       }
       selectAircraftRef.current = null;
+      deselectAircraftRef.current = null;
+      focusAircraftRef.current = null;
       updateMapFiltersRef.current = null;
 
       cancelAnimationFrame(animationFrameId);
@@ -661,7 +680,7 @@ export function AircraftMap() {
       <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 max-w-[calc(100vw-2rem)]">
         <AircraftSearch
           onSelectAircraft={(aircraft) => {
-            selectAircraftRef.current?.(aircraft);
+            selectAircraftRef.current?.(aircraft, true);
           }}
         />
 
@@ -690,6 +709,14 @@ export function AircraftMap() {
           </div>
         )}
       </div>
+
+      {/* Selected Aircraft Details Sidebar */}
+      <AircraftDetailsSidebar
+        selectedState={selectedState}
+        socketConnected={socketConnected}
+        onClose={handleCloseSidebar}
+        onFocusAircraft={handleFocusAircraft}
+      />
 
       <div ref={containerRef} className="h-full w-full" />
     </div>
