@@ -144,6 +144,14 @@ export function AircraftMap() {
       zoom: MAP_ZOOM,
     });
 
+    const handleConnect = () => {
+      console.log("Socket connected:", socket.id);
+    };
+
+    const handleDisconnect = (reason: string) => {
+      console.log("Socket disconnected:", reason);
+    };
+
     const handleConnectError = (
       error: Error
     ) => {
@@ -153,13 +161,11 @@ export function AircraftMap() {
       );
     };
 
-
     let latestAircraftData: Aircraft[] = [];
     let displayedAircraftData: Aircraft[] = [];
     let lastUpdateTime = performance.now();
-    let debugAircraftId: string | null = null;
-    let updateNumber = 0;
-    let debugAfterUpdate = false;
+    let selectedAircraftId: string | null = null;
+    let activePopup: Popup | null = null;
 
     //aircraft update handler
 
@@ -193,6 +199,20 @@ export function AircraftMap() {
         "LATEST AIRCRAFT DATA:",
         latestAircraftData.length
       );
+
+      // Keep selected aircraft popup synchronized with live telemetry
+      if (selectedAircraftId && activePopup && activePopup.isOpen()) {
+        const liveAc = data.find((ac) => ac.id === selectedAircraftId);
+        if (liveAc) {
+          activePopup
+            .setLngLat([liveAc.longitude, liveAc.latitude])
+            .setHTML(renderAircraftPopupHTML(liveAc, true));
+        } else {
+          activePopup.setHTML(
+            renderAircraftPopupHTML({ id: selectedAircraftId }, false)
+          );
+        }
+      }
     };
 
 
@@ -525,6 +545,64 @@ export function AircraftMap() {
 
 
 
+    const selectAircraft = (
+      aircraftOrId: Aircraft | string,
+      flyTo = true
+    ) => {
+      const id =
+        typeof aircraftOrId === "string" ? aircraftOrId : aircraftOrId.id;
+      selectedAircraftId = id;
+
+      const targetAircraft =
+        displayedAircraftData.find((ac) => ac.id === id) ||
+        latestAircraftData.find((ac) => ac.id === id) ||
+        (typeof aircraftOrId !== "string" ? aircraftOrId : null);
+
+      if (!targetAircraft) return;
+
+      if (flyTo) {
+        map.flyTo({
+          center: [targetAircraft.longitude, targetAircraft.latitude],
+          zoom: Math.max(map.getZoom(), 10),
+          essential: true,
+        });
+      }
+
+      if (!activePopup) {
+        activePopup = new Popup({
+          closeButton: true,
+          closeOnClick: true,
+          offset: 18,
+        });
+        activePopup.on("close", () => {
+          selectedAircraftId = null;
+          activePopup = null;
+        });
+      }
+
+      activePopup
+        .setLngLat([targetAircraft.longitude, targetAircraft.latitude])
+        .setHTML(renderAircraftPopupHTML(targetAircraft, true));
+
+      if (!activePopup.isOpen()) {
+        activePopup.addTo(map);
+      }
+    };
+
+    selectAircraftRef.current = (aircraft: Aircraft) => {
+      selectAircraft(aircraft, true);
+    };
+
+    socket.on(
+      "connect",
+      handleConnect
+    );
+
+    socket.on(
+      "disconnect",
+      handleDisconnect
+    );
+
     socket.on(
       "connect_error",
       handleConnectError
@@ -539,79 +617,9 @@ export function AircraftMap() {
 
     map.on("click", "aircraft-layer", (e) => {
       const features = e.features?.[0];
-
-      console.log("test feature", features?.properties)
-
-      if (!features) {
-        return
-      }
-
-      new Popup({
-        closeButton: true,
-        closeOnClick: true,
-        offset: 18,
-      })
-        .setLngLat(e.lngLat)
-        .setHTML(`
-    <div class="aircraft-popup">
-      <div class="aircraft-popup__header">
-        <div>
-          <span class="aircraft-popup__label">CALLSIGN</span>
-          <h3>${features.properties.callsign || "Unknown"}</h3>
-        </div>
-
-        <span class="aircraft-popup__status">
-          LIVE
-        </span>
-      </div>
-
-      <div class="aircraft-popup__model">
-        ${features.properties.description || "Aircraft information unavailable"}
-      </div>
-
-      <div class="aircraft-popup__meta">
-        <span>${features.properties.registration || "N/A"}</span>
-        <span>•</span>
-        <span>${features.properties.aircraftType || "N/A"}</span>
-      </div>
-
-      <div class="aircraft-popup__divider"></div>
-
-      <div class="aircraft-popup__grid">
-        <div class="aircraft-popup__item">
-          <span>Altitude</span>
-          <strong>${features.properties.altitude ?? "N/A"} ft</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Ground Speed</span>
-          <strong>${features.properties.groundSpeed ?? "N/A"} kt</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Heading</span>
-          <strong>${features.properties.heading ?? "N/A"}°</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Vertical Rate</span>
-          <strong>${features.properties.verticalRate ?? "N/A"} ft/min</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Squawk</span>
-          <strong>${features.properties.squawk || "N/A"}</strong>
-        </div>
-
-        <div class="aircraft-popup__item">
-          <span>Emergency</span>
-          <strong>${features.properties.emergency || "none"}</strong>
-        </div>
-      </div>
-    </div>
-  `)
-        .addTo(map);
-    })
+      if (!features?.properties?.id) return;
+      selectAircraft(features.properties.id, false);
+    });
 
     map.on("load", async () => {
       try {

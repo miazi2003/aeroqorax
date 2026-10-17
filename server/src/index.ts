@@ -1,21 +1,18 @@
 import express from "express";
 import cors from "cors";
-import axios from "axios";
 import { createServer } from "http";
 import { Server } from "socket.io";
 import { airPlaneRouter } from "./modules/aircraft/aircraft.route.js";
 import socket from "./realtime/socket.js";
 import "dotenv/config";
+
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
 const PORT = Number(process.env.PORT) || 5000;
-
 const CLIENT_URL = process.env.CLIENT_URL;
-
-
 
 app.get("/", (req, res) => {
   res.json({
@@ -23,12 +20,10 @@ app.get("/", (req, res) => {
   });
 });
 
+// Fetching & searching aircraft data
+app.use("/api/aircraft", airPlaneRouter);
 
-//fetching aircraft data 
-
-app.use("/api/aircraft", airPlaneRouter)
-
-const httpServer = createServer(app)
+const httpServer = createServer(app);
 
 const io = new Server(httpServer, {
   cors: {
@@ -37,15 +32,6 @@ const io = new Server(httpServer, {
 });
 
 socket(io);
-
-io.on("connection" , (socket)=>{
-console.log("Socket Connected" , socket.id)
-
-socket.on("disconnect" , ()=>{
-  console.log("Socket Disconnected" , socket.id)
-})
-})
-
 
 httpServer.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
