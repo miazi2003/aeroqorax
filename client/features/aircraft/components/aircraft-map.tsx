@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   GeoJSONSource,
   Map as MapLibreMap,
@@ -11,11 +11,20 @@ import {
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import { AircraftSearch } from "./aircraft-search";
+import { AircraftFilters } from "./aircraft-filters";
 import aircraftGeoJson from "@/features/aircraft/utils/aircraftGeoJson";
 import socket from "@/lib/socket";
 import { Aircraft } from "@/features/aircraft/types/aircraft";
 import predictAircraftPosition from "../utils/predictAircraftPosition";
 import distanceBetweenPoints from "../utils/distanceBetweenPoints";
+import {
+  filterAircraft,
+  getAvailableFilterOptions,
+  isAircraftMatchingFilter,
+  createDefaultFilterCriteria,
+  type AircraftFilterCriteria,
+  type DynamicFilterOptions,
+} from "../utils/filterAircraft";
 
 const DHAKA: [longitude: number, latitude: number] = [
   90.4125,
@@ -26,7 +35,8 @@ const MAP_ZOOM = 8;
 
 function renderAircraftPopupHTML(
   aircraft: Partial<Aircraft> & Record<string, unknown>,
-  isLive = true
+  isLive = true,
+  isFilterException = false
 ): string {
   const callsign = aircraft.callsign || aircraft.flightNumber || "Unknown";
   const model = aircraft.description || "Aircraft information unavailable";
@@ -56,6 +66,10 @@ function renderAircraftPopupHTML(
     : "aircraft-popup__status aircraft-popup__status--stale";
   const statusText = isLive ? "LIVE" : "SIGNAL LOST";
 
+  const filterWarningHTML = isFilterException
+    ? `<div class="aircraft-popup__filter-warning">Hidden by Active Filters</div>`
+    : "";
+
   return `
     <div class="aircraft-popup">
       <div class="aircraft-popup__header">
@@ -78,6 +92,8 @@ function renderAircraftPopupHTML(
         <span>•</span>
         <span>${type}</span>
       </div>
+
+      ${filterWarningHTML}
 
       <div class="aircraft-popup__divider"></div>
 
@@ -119,19 +135,53 @@ function renderAircraftPopupHTML(
 export function AircraftMap() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const selectAircraftRef = useRef<((aircraft: Aircraft) => void) | null>(null);
+  const updateMapFiltersRef = useRef<(() => void) | null>(null);
+
+  const [criteria, setCriteria] = useState<AircraftFilterCriteria>(
+    createDefaultFilterCriteria
+  );
+  const criteriaRef = useRef<AircraftFilterCriteria>(criteria);
+
+  const [counts, setCounts] = useState<{
+    total: number;
+    matching: number;
+    visible: number;
+    hasSelectedException: boolean;
+  }>({
+    total: 0,
+    matching: 0,
+    visible: 0,
+    hasSelectedException: false,
+  });
+
+  const [dynamicOptions, setDynamicOptions] = useState<DynamicFilterOptions>({
+    airlines: [],
+    aircraftTypes: [],
+  });
+
+  const handleCriteriaChange = useCallback(
+    (newCriteria: AircraftFilterCriteria) => {
+      setCriteria(newCriteria);
+      criteriaRef.current = newCriteria;
+      updateMapFiltersRef.current?.();
+    },
+    []
+  );
+
+  const handleResetAllFilters = useCallback(() => {
+    const defaultCriteria = createDefaultFilterCriteria();
+    setCriteria(defaultCriteria);
+    criteriaRef.current = defaultCriteria;
+    updateMapFiltersRef.current?.();
+  }, []);
 
   useEffect(() => {
-
-    const apiKey =
-      process.env.NEXT_PUBLIC_MAPTILER_KEY;
+    const apiKey = process.env.NEXT_PUBLIC_MAPTILER_KEY;
 
     if (!apiKey || !containerRef.current) {
       if (!apiKey) {
-        console.error(
-          "NEXT_PUBLIC_MAPTILER_KEY is missing"
-        );
+        console.error("NEXT_PUBLIC_MAPTILER_KEY is missing");
       }
-
       return;
     }
 
@@ -152,36 +202,89 @@ export function AircraftMap() {
       console.log("Socket disconnected:", reason);
     };
 
-    const handleConnectError = (
-      error: Error
-    ) => {
-      console.error(
-        "Socket connect error:",
-        error.message
-      );
+    const handleConnectError = (error: Error) => {
+      console.error("Socket connect error:", error.message);
     };
 
     let latestAircraftData: Aircraft[] = [];
+    let filteredAircraftData: Aircraft[] = [];
     let displayedAircraftData: Aircraft[] = [];
     let lastUpdateTime = performance.now();
     let selectedAircraftId: string | null = null;
     let activePopup: Popup | null = null;
 
-    //aircraft update handler
+    const getVisibleAircraft = (aircraftData: Aircraft[]) => {
+      const bounds = map.getBounds();
+      return aircraftData.filter((aircraft) => {
+        return bounds.contains([aircraft.longitude, aircraft.latitude]);
+      });
+    };
 
-    const handleAircraftUpdate = (
-      data: Aircraft[]
-    ) => {
-      latestAircraftData = data;
+    const applyFilters = () => {
+      const filterRes = filterAircraft(
+        latestAircraftData,
+        criteriaRef.current,
+        selectedAircraftId
+      );
+      filteredAircraftData = filterRes.matchingAircraft;
+      displayedAircraftData = filterRes.matchingAircraft;
 
-      if (displayedAircraftData.length === 0) {
-        displayedAircraftData = data;
+      const visibleAircraftData = getVisibleAircraft(filteredAircraftData);
+      setCounts({
+        total: latestAircraftData.length,
+        matching: filterRes.totalMatching,
+        visible: visibleAircraftData.length,
+        hasSelectedException: Boolean(filterRes.selectedExceptionAircraft),
+      });
+
+      const source = map.getSource("aircraft") as GeoJSONSource | undefined;
+      if (source) {
+        source.setData(aircraftGeoJson(visibleAircraftData));
       }
 
+      if (selectedAircraftId && activePopup && activePopup.isOpen()) {
+        const targetAc = latestAircraftData.find(
+          (ac) => ac.id === selectedAircraftId
+        );
+        if (targetAc) {
+          const isException = Boolean(
+            filterRes.selectedExceptionAircraft &&
+              filterRes.selectedExceptionAircraft.id === selectedAircraftId
+          );
+          activePopup.setHTML(
+            renderAircraftPopupHTML(targetAc, true, isException)
+          );
+        }
+      }
+    };
+    updateMapFiltersRef.current = applyFilters;
+
+    const handleAircraftUpdate = (data: Aircraft[]) => {
+      latestAircraftData = data;
       lastUpdateTime = performance.now();
 
-      const visibleAircraftData =
-        getVisibleAircraft(data);
+      const options = getAvailableFilterOptions(data);
+      setDynamicOptions(options);
+
+      const filterRes = filterAircraft(
+        data,
+        criteriaRef.current,
+        selectedAircraftId
+      );
+      filteredAircraftData = filterRes.matchingAircraft;
+
+      const visibleAircraftData = getVisibleAircraft(filteredAircraftData);
+
+      setCounts({
+        total: data.length,
+        matching: filterRes.totalMatching,
+        visible: visibleAircraftData.length,
+        hasSelectedException: Boolean(filterRes.selectedExceptionAircraft),
+      });
+
+      if (displayedAircraftData.length === 0) {
+        displayedAircraftData = filteredAircraftData;
+      }
 
       const currentZoom = map.getZoom();
 
@@ -195,18 +298,17 @@ export function AircraftMap() {
         return;
       }
 
-      console.log(
-        "LATEST AIRCRAFT DATA:",
-        latestAircraftData.length
-      );
-
       // Keep selected aircraft popup synchronized with live telemetry
       if (selectedAircraftId && activePopup && activePopup.isOpen()) {
         const liveAc = data.find((ac) => ac.id === selectedAircraftId);
         if (liveAc) {
+          const isException = Boolean(
+            filterRes.selectedExceptionAircraft &&
+              filterRes.selectedExceptionAircraft.id === selectedAircraftId
+          );
           activePopup
             .setLngLat([liveAc.longitude, liveAc.latitude])
-            .setHTML(renderAircraftPopupHTML(liveAc, true));
+            .setHTML(renderAircraftPopupHTML(liveAc, true, isException));
         } else {
           activePopup.setHTML(
             renderAircraftPopupHTML({ id: selectedAircraftId }, false)
@@ -215,36 +317,16 @@ export function AircraftMap() {
       }
     };
 
-
-
-    const lerp = (
-      start: number,
-      end: number,
-      factor: number,
-
-
-    ) => {
+    const lerp = (start: number, end: number, factor: number) => {
       return start + (end - start) * factor;
     };
 
-    const getCorrectionRate = (
-      positionError: number
-    ) => {
-      if (positionError <= 100) {
-        return 0.5;
-      }
-
-      if (positionError <= 500) {
-        return 1;
-      }
-
-      if (positionError <= 1500) {
-        return 1.5;
-      }
-
+    const getCorrectionRate = (positionError: number) => {
+      if (positionError <= 100) return 0.5;
+      if (positionError <= 500) return 1;
+      if (positionError <= 1500) return 1.5;
       return 2;
     };
-
 
     const getAlongTrackDistance = (
       fromLatitude: number,
@@ -254,98 +336,47 @@ export function AircraftMap() {
       heading: number
     ) => {
       const metersPerDegreeLatitude = 111320;
-
       const averageLatitudeRad =
-        (((fromLatitude + toLatitude) / 2) *
-          Math.PI) /
-        180;
-
+        (((fromLatitude + toLatitude) / 2) * Math.PI) / 180;
       const metersPerDegreeLongitude =
-        111320 *
-        Math.cos(averageLatitudeRad);
+        111320 * Math.cos(averageLatitudeRad);
 
       const northDistance =
-        (toLatitude - fromLatitude) *
-        metersPerDegreeLatitude;
-
+        (toLatitude - fromLatitude) * metersPerDegreeLatitude;
       const eastDistance =
-        (toLongitude - fromLongitude) *
-        metersPerDegreeLongitude;
+        (toLongitude - fromLongitude) * metersPerDegreeLongitude;
 
-      const headingRad =
-        (heading * Math.PI) / 180;
+      const headingRad = (heading * Math.PI) / 180;
+      const headingNorth = Math.cos(headingRad);
+      const headingEast = Math.sin(headingRad);
 
-      const headingNorth =
-        Math.cos(headingRad);
-
-      const headingEast =
-        Math.sin(headingRad);
-
-      return (
-        northDistance * headingNorth +
-        eastDistance * headingEast
-      );
+      return northDistance * headingNorth + eastDistance * headingEast;
     };
 
-
-
-
-
-
-    const getVisibleAircraft = (aircraftData: Aircraft[]) => {
-      const bounds = map.getBounds()
-      return aircraftData.filter((aircraft) => {
-        return bounds.contains([
-          aircraft.longitude,
-          aircraft.latitude
-        ])
-      })
-    }
-
-
-
-
-
-
     let previousFrameTime = performance.now();
-
     const TARGET_FPS = 45;
     const FRAME_INTERVAL = 1000 / TARGET_FPS;
-
     let lastRenderTime = performance.now();
-
     let animationFrameId: number;
-    //aircraft smooth animator
-    const animateAircraft = (
-      currentTime: number
-    ) => {
 
-      const currentZoom = map.getZoom()
+    const animateAircraft = (currentTime: number) => {
+      const currentZoom = map.getZoom();
 
       if (currentZoom <= 6) {
-        previousFrameTime = currentTime
-        animationFrameId = requestAnimationFrame(animateAircraft)
-
-        return
+        previousFrameTime = currentTime;
+        animationFrameId = requestAnimationFrame(animateAircraft);
+        return;
       }
 
-
-      const timeSinceLastRender =
-        currentTime - lastRenderTime;
-
+      const timeSinceLastRender = currentTime - lastRenderTime;
 
       if (timeSinceLastRender < FRAME_INTERVAL) {
-        animationFrameId = requestAnimationFrame(animateAircraft)
-
+        animationFrameId = requestAnimationFrame(animateAircraft);
         return;
       }
       lastRenderTime = currentTime;
 
-
-
-      const deltaSeconds =
-        (currentTime - previousFrameTime) / 1000;
-
+      const deltaSeconds = (currentTime - previousFrameTime) / 1000;
       previousFrameTime = currentTime;
 
       const elapsedSeconds = Math.max(
@@ -353,170 +384,117 @@ export function AircraftMap() {
         (currentTime - lastUpdateTime) / 1000
       );
 
-
-      const visibleAircraftData =
-        getVisibleAircraft(
-          latestAircraftData
-        );
+      const visibleAircraftData = getVisibleAircraft(filteredAircraftData);
 
       const latestAircraftById = new Map<string, Aircraft>(
-        latestAircraftData.map((aircraft) => [
-          aircraft.id,
-          aircraft,
-        ])
+        filteredAircraftData.map((aircraft) => [aircraft.id, aircraft])
       );
 
       const displayedAircraftById = new Map<string, Aircraft>(
-        displayedAircraftData.map((aircraft) => [
-          aircraft.id,
-          aircraft,
-        ])
+        displayedAircraftData.map((aircraft) => [aircraft.id, aircraft])
       );
 
+      const predictedAircraftData = visibleAircraftData.map((aircraft) => {
+        if (
+          aircraft.groundSpeed === undefined ||
+          aircraft.heading === undefined
+        ) {
+          return aircraft;
+        }
 
+        const predictedPosition = predictAircraftPosition(
+          aircraft.latitude,
+          aircraft.longitude,
+          aircraft.groundSpeed,
+          aircraft.heading,
+          elapsedSeconds
+        );
 
-      const predictedAircraftData =
-        visibleAircraftData.map((aircraft) => {
-          if (
-            aircraft.groundSpeed === undefined ||
-            aircraft.heading === undefined
-          ) {
-            return aircraft;
-          }
+        return {
+          ...aircraft,
+          latitude: predictedPosition.latitude,
+          longitude: predictedPosition.longitude,
+        };
+      });
 
-          const predictedPosition =
-            predictAircraftPosition(
-              aircraft.latitude,
-              aircraft.longitude,
-              aircraft.groundSpeed,
-              aircraft.heading,
-              elapsedSeconds
-            );
+      displayedAircraftData = predictedAircraftData.map((targetAircraft) => {
+        const displayedAircraft = displayedAircraftById.get(targetAircraft.id);
+
+        if (!displayedAircraft) {
+          return targetAircraft;
+        }
+
+        const realAircraft = latestAircraftById.get(targetAircraft.id);
+
+        if (!realAircraft) {
+          return targetAircraft;
+        }
+
+        const positionError = distanceBetweenPoints(
+          displayedAircraft.latitude,
+          displayedAircraft.longitude,
+          realAircraft.latitude,
+          realAircraft.longitude
+        );
+
+        const correctionRate = getCorrectionRate(positionError);
+        const correctionFactor = 1 - Math.exp(-correctionRate * deltaSeconds);
+
+        const groundSpeed = targetAircraft.groundSpeed;
+        const heading = targetAircraft.heading;
+        const hasMotionData =
+          groundSpeed !== undefined && heading !== undefined;
+
+        const alongTrackDistance =
+          heading !== undefined
+            ? getAlongTrackDistance(
+                displayedAircraft.latitude,
+                displayedAircraft.longitude,
+                targetAircraft.latitude,
+                targetAircraft.longitude,
+                heading
+              )
+            : 0;
+
+        const targetIsBehind = hasMotionData && alongTrackDistance < -25;
+        if (
+          targetIsBehind &&
+          groundSpeed !== undefined &&
+          heading !== undefined
+        ) {
+          const forwardPosition = predictAircraftPosition(
+            displayedAircraft.latitude,
+            displayedAircraft.longitude,
+            groundSpeed,
+            heading,
+            deltaSeconds
+          );
 
           return {
-            ...aircraft,
-            latitude:
-              predictedPosition.latitude,
-            longitude:
-              predictedPosition.longitude,
+            ...targetAircraft,
+            latitude: forwardPosition.latitude,
+            longitude: forwardPosition.longitude,
           };
-        });
+        }
 
-      displayedAircraftData =
-        predictedAircraftData.map(
-          (targetAircraft) => {
-            const displayedAircraft =
-              displayedAircraftById.get(
-                targetAircraft.id
-              );
+        return {
+          ...targetAircraft,
+          latitude: lerp(
+            displayedAircraft.latitude,
+            targetAircraft.latitude,
+            correctionFactor
+          ),
+          longitude: lerp(
+            displayedAircraft.longitude,
+            targetAircraft.longitude,
+            correctionFactor
+          ),
+        };
+      });
 
+      const predictedGeoJson = aircraftGeoJson(displayedAircraftData);
 
-            if (!displayedAircraft) {
-              return targetAircraft;
-            }
-
-            const realAircraft =
-              latestAircraftById.get(
-                targetAircraft.id
-              );
-
-            if (!realAircraft) {
-
-
-
-
-              return targetAircraft;
-            }
-
-            const positionError =
-              distanceBetweenPoints(
-                displayedAircraft.latitude,
-                displayedAircraft.longitude,
-                realAircraft.latitude,
-                realAircraft.longitude
-              );
-
-            const correctionRate =
-              getCorrectionRate(positionError);
-
-            const correctionFactor =
-              1 -
-              Math.exp(
-                -correctionRate * deltaSeconds
-              );
-
-            const groundSpeed =
-              targetAircraft.groundSpeed;
-
-            const heading =
-              targetAircraft.heading;
-
-            const hasMotionData =
-              groundSpeed !== undefined &&
-              heading !== undefined;
-
-            const alongTrackDistance =
-              heading !== undefined
-                ? getAlongTrackDistance(
-                  displayedAircraft.latitude,
-                  displayedAircraft.longitude,
-                  targetAircraft.latitude,
-                  targetAircraft.longitude,
-                  heading
-                )
-                : 0;
-
-            const targetIsBehind =
-              hasMotionData &&
-              alongTrackDistance < -25;
-            if (
-              targetIsBehind &&
-              groundSpeed !== undefined &&
-              heading !== undefined
-            ) {
-
-              const forwardPosition =
-                predictAircraftPosition(
-                  displayedAircraft.latitude,
-                  displayedAircraft.longitude,
-                  groundSpeed,
-                  heading,
-                  deltaSeconds
-                );
-
-              return {
-                ...targetAircraft,
-                latitude: forwardPosition.latitude,
-                longitude: forwardPosition.longitude,
-              };
-            }
-
-            return {
-              ...targetAircraft,
-
-              latitude: lerp(
-                displayedAircraft.latitude,
-                targetAircraft.latitude,
-                correctionFactor
-              ),
-
-              longitude: lerp(
-                displayedAircraft.longitude,
-                targetAircraft.longitude,
-                correctionFactor
-              ),
-            };
-          }
-        );
-
-      const predictedGeoJson =
-        aircraftGeoJson(
-          displayedAircraftData
-        );
-
-      const source = map.getSource(
-        "aircraft"
-      ) as GeoJSONSource | undefined;
+      const source = map.getSource("aircraft") as GeoJSONSource | undefined;
 
       if (source) {
         source.setData(predictedGeoJson);
@@ -532,18 +510,10 @@ export function AircraftMap() {
         }
       }
 
-      animationFrameId =
-        requestAnimationFrame(
-          animateAircraft
-        );
+      animationFrameId = requestAnimationFrame(animateAircraft);
     };
 
-    animationFrameId =
-      requestAnimationFrame(
-        animateAircraft
-      );
-
-
+    animationFrameId = requestAnimationFrame(animateAircraft);
 
     const selectAircraft = (
       aircraftOrId: Aircraft | string,
@@ -554,11 +524,17 @@ export function AircraftMap() {
       selectedAircraftId = id;
 
       const targetAircraft =
-        displayedAircraftData.find((ac) => ac.id === id) ||
         latestAircraftData.find((ac) => ac.id === id) ||
+        displayedAircraftData.find((ac) => ac.id === id) ||
         (typeof aircraftOrId !== "string" ? aircraftOrId : null);
 
       if (!targetAircraft) return;
+
+      const isMatching = isAircraftMatchingFilter(
+        targetAircraft,
+        criteriaRef.current
+      );
+      const isFilterException = !isMatching;
 
       if (flyTo) {
         map.flyTo({
@@ -577,15 +553,23 @@ export function AircraftMap() {
         activePopup.on("close", () => {
           selectedAircraftId = null;
           activePopup = null;
+          updateMapFiltersRef.current?.();
         });
       }
 
       activePopup
         .setLngLat([targetAircraft.longitude, targetAircraft.latitude])
-        .setHTML(renderAircraftPopupHTML(targetAircraft, true));
+        .setHTML(
+          renderAircraftPopupHTML(targetAircraft, true, isFilterException)
+        );
 
       if (!activePopup.isOpen()) {
         activePopup.addTo(map);
+      }
+
+      // If aircraft was hidden by filters, re-apply so it is rendered on map as an exception
+      if (isFilterException) {
+        updateMapFiltersRef.current?.();
       }
     };
 
@@ -593,25 +577,10 @@ export function AircraftMap() {
       selectAircraft(aircraft, true);
     };
 
-    socket.on(
-      "connect",
-      handleConnect
-    );
-
-    socket.on(
-      "disconnect",
-      handleDisconnect
-    );
-
-    socket.on(
-      "connect_error",
-      handleConnectError
-    );
-
-    socket.on(
-      "aircraft:update",
-      handleAircraftUpdate
-    );
+    socket.on("connect", handleConnect);
+    socket.on("disconnect", handleDisconnect);
+    socket.on("connect_error", handleConnectError);
+    socket.on("aircraft:update", handleAircraftUpdate);
 
     socket.connect();
 
@@ -621,18 +590,20 @@ export function AircraftMap() {
       selectAircraft(features.properties.id, false);
     });
 
+    map.on("moveend", () => {
+      const visibleAircraft = getVisibleAircraft(filteredAircraftData);
+      setCounts((prev) => ({
+        ...prev,
+        visible: visibleAircraft.length,
+      }));
+    });
+
     map.on("load", async () => {
       try {
-        const aircraftImage =
-          await map.loadImage(
-            "/airplane-svgrepo-com.png"
-          );
+        const aircraftImage = await map.loadImage("/airplane-svgrepo-com.png");
 
         if (!map.hasImage("aircraftSvg")) {
-          map.addImage(
-            "aircraftSvg",
-            aircraftImage.data
-          );
+          map.addImage("aircraftSvg", aircraftImage.data);
         }
 
         map.addSource("aircraft", {
@@ -647,37 +618,21 @@ export function AircraftMap() {
           id: "aircraft-layer",
           type: "symbol",
           source: "aircraft",
-
           layout: {
             "icon-image": "aircraftSvg",
             "icon-size": 0.04,
-
-            "icon-rotate": [
-              "-",
-              ["get", "heading"],
-              45,
-            ],
-
-            "icon-rotation-alignment":
-              "map",
-
+            "icon-rotate": ["-", ["get", "heading"], 45],
+            "icon-rotation-alignment": "map",
             "icon-allow-overlap": true,
           },
         });
-
       } catch (error) {
-        console.error(
-          "AIRCRAFT LAYER ERROR:",
-          error
-        );
+        console.error("AIRCRAFT LAYER ERROR:", error);
       }
     });
 
     map.on("error", ({ error }) => {
-      console.error(
-        "MapLibre resource error:",
-        error
-      );
+      console.error("MapLibre resource error:", error);
     });
 
     return () => {
@@ -686,51 +641,57 @@ export function AircraftMap() {
         activePopup = null;
       }
       selectAircraftRef.current = null;
+      updateMapFiltersRef.current = null;
 
       cancelAnimationFrame(animationFrameId);
 
-
-      socket.off(
-        "connect",
-        handleConnect
-      );
-
-      socket.off(
-        "disconnect",
-        handleDisconnect
-      );
-
-      socket.off(
-        "connect_error",
-        handleConnectError
-      );
-
-      socket.off(
-        "aircraft:update",
-        handleAircraftUpdate
-      );
+      socket.off("connect", handleConnect);
+      socket.off("disconnect", handleDisconnect);
+      socket.off("connect_error", handleConnectError);
+      socket.off("aircraft:update", handleAircraftUpdate);
 
       socket.disconnect();
-
       map.remove();
     };
   }, []);
 
   return (
     <div className="relative h-screen w-full overflow-hidden">
-      {/* Floating Advanced Flight Search */}
-      <div className="absolute top-4 left-4 z-20">
+      {/* Top Left Floating Controls: Search + Advanced Filters */}
+      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 max-w-[calc(100vw-2rem)]">
         <AircraftSearch
           onSelectAircraft={(aircraft) => {
             selectAircraftRef.current?.(aircraft);
           }}
         />
+
+        <AircraftFilters
+          criteria={criteria}
+          onChangeCriteria={handleCriteriaChange}
+          dynamicOptions={dynamicOptions}
+          totalCount={counts.total}
+          matchingCount={counts.matching}
+          visibleCount={counts.visible}
+          hasSelectedException={counts.hasSelectedException}
+          onResetAll={handleResetAllFilters}
+        />
+
+        {/* Empty state alert when active filters match 0 aircraft */}
+        {counts.total > 0 && counts.matching === 0 && (
+          <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 rounded-xl bg-amber-950/80 border border-amber-500/30 text-amber-200 text-xs shadow-xl backdrop-blur-md">
+            <span>No aircraft match your active filters.</span>
+            <button
+              type="button"
+              onClick={handleResetAllFilters}
+              className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-100 font-medium underline"
+            >
+              Reset Filters
+            </button>
+          </div>
+        )}
       </div>
 
-      <div
-        ref={containerRef}
-        className="h-full w-full"
-      />
+      <div ref={containerRef} className="h-full w-full" />
     </div>
   );
 }

@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "npx tsx --test features/**/*.test.ts"
   },
   "dependencies": {
     "axios": "^1.19.0",

@@ -2,6 +2,7 @@ export type Aircraft = {
   id: string;
   callsign?: string;
   flightNumber?: string;
+  airline?: string;
   registration?: string;
 
   aircraftType?: string;
@@ -17,6 +18,7 @@ export type Aircraft = {
   verticalRate?: number;
   squawk?: string;
   emergency?: string;
+  onGround?: boolean;
 };
 
 export interface AircraftSearchMeta {
@@ -51,4 +53,5 @@ export type RawAircraft = {
 
   squawk?: string;
   emergency?: string;
+  ground?: boolean;
 };

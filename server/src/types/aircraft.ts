@@ -2,6 +2,7 @@ export type Aircraft = {
   id: string;
   callsign?: string | undefined;
   flightNumber?: string | undefined;
+  airline?: string | undefined;
   registration?: string | undefined;
 
   aircraftType?: string | undefined;
@@ -17,6 +18,7 @@ export type Aircraft = {
   verticalRate?: number | undefined;
   squawk?: string | undefined;
   emergency?: string | undefined;
+  onGround?: boolean | undefined;
 };
 
 export interface AircraftSearchMeta {
@@ -51,4 +53,5 @@ export type RawAircraft = {
 
   squawk?: string | undefined;
   emergency?: string | undefined;
+  ground?: boolean | undefined;
 };

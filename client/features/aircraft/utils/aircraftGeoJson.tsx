@@ -17,6 +17,7 @@ const aircraftGeoJson = (
         // Aircraft identity
         callsign: aircraft.callsign,
         flightNumber: aircraft.flightNumber,
+        airline: aircraft.airline,
         registration: aircraft.registration,
         aircraftType: aircraft.aircraftType,
         description: aircraft.description,
@@ -30,6 +31,7 @@ const aircraftGeoJson = (
         // Transponder / status
         squawk: aircraft.squawk,
         emergency: aircraft.emergency,
+        onGround: aircraft.onGround,
       },
 
       geometry: {

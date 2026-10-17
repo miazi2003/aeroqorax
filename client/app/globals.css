@@ -114,6 +114,19 @@ body {
   color: #f87171;
 }
 
+.aircraft-popup__filter-warning {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.15);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #fbbf24;
+}
+
 .aircraft-popup__model {
   margin-top: 10px;
   font-size: 13px;

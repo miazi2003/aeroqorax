@@ -74,3 +74,19 @@ export function getEquivalentCallsigns(query: string): string[] {
   return variations;
 }
 
+/**
+ * Derives the verified airline name from an ATC callsign if a verified mapping exists.
+ * e.g., "UBG338" -> "US-Bangla Airlines", "BBC147" -> "Biman Bangladesh Airlines"
+ */
+export function getAirlineName(callsign?: string): string | undefined {
+  if (!callsign) return undefined;
+  const clean = callsign.trim().toUpperCase();
+
+  for (const mapping of VERIFIED_AIRLINE_MAPPINGS) {
+    if (clean.startsWith(mapping.icaoPrefix)) {
+      return mapping.airlineName;
+    }
+  }
+
+  return undefined;
+}

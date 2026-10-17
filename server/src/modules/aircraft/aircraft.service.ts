@@ -1,6 +1,10 @@
 import axios from "axios";
 import type { Aircraft, AircraftSearchMeta, RawAircraft } from "../../types/aircraft.js";
-import { getCommercialFlightNumber, getEquivalentCallsigns } from "./airline-mapping.js";
+import {
+  getAirlineName,
+  getCommercialFlightNumber,
+  getEquivalentCallsigns,
+} from "./airline-mapping.js";
 
 // In-memory snapshot cache
 let cachedAircraft: Aircraft[] = [];
@@ -23,11 +27,20 @@ function normalizeAircraftData(rawData: RawAircraft[]): Aircraft[] {
     .map((ac: RawAircraft): Aircraft => {
       const callsign = ac.flight ? ac.flight.trim() : undefined;
       const flightNumber = getCommercialFlightNumber(callsign);
+      const airline = getAirlineName(callsign);
+
+      const onGround =
+        ac.ground === true || ac.alt_baro === "ground"
+          ? true
+          : typeof ac.alt_baro === "number"
+          ? false
+          : undefined;
 
       return {
         id: ac.hex,
         callsign,
         flightNumber,
+        airline,
         registration: ac.r,
 
         aircraftType: ac.t,
@@ -43,6 +56,7 @@ function normalizeAircraftData(rawData: RawAircraft[]): Aircraft[] {
         verticalRate: ac.baro_rate,
         squawk: ac.squawk,
         emergency: ac.emergency,
+        onGround,
       };
     });
 }
