@@ -230,7 +230,6 @@ export function AircraftMap() {
         selectedAircraftId
       );
       filteredAircraftData = filterRes.matchingAircraft;
-      displayedAircraftData = filterRes.matchingAircraft;
 
       const visibleAircraftData = getVisibleAircraft(filteredAircraftData);
       setCounts({
@@ -240,9 +239,13 @@ export function AircraftMap() {
         hasSelectedException: Boolean(filterRes.selectedExceptionAircraft),
       });
 
-      const source = map.getSource("aircraft") as GeoJSONSource | undefined;
-      if (source) {
-        source.setData(aircraftGeoJson(visibleAircraftData));
+      const currentZoom = map.getZoom();
+      if (currentZoom <= 6) {
+        displayedAircraftData = visibleAircraftData;
+        const source = map.getSource("aircraft") as GeoJSONSource | undefined;
+        if (source) {
+          source.setData(aircraftGeoJson(visibleAircraftData));
+        }
       }
 
       // Synchronize selection exception status with sidebar and popup
@@ -330,15 +333,13 @@ export function AircraftMap() {
         if (activePopup && activePopup.isOpen()) {
           if (updatedSelectedState?.isLive) {
             const liveAc = updatedSelectedState.aircraft;
-            activePopup
-              .setLngLat([liveAc.longitude, liveAc.latitude])
-              .setHTML(
-                renderAircraftPopupHTML(
-                  liveAc,
-                  true,
-                  updatedSelectedState.isFilterException
-                )
-              );
+            activePopup.setHTML(
+              renderAircraftPopupHTML(
+                liveAc,
+                true,
+                updatedSelectedState.isFilterException
+              )
+            );
           } else {
             activePopup.setHTML(
               renderAircraftPopupHTML(
@@ -388,44 +389,103 @@ export function AircraftMap() {
       return northDistance * headingNorth + eastDistance * headingEast;
     };
 
+    let previousFrameTime = performance.now();
+    const TARGET_FPS = 45;
+    const FRAME_INTERVAL = 1000 / TARGET_FPS;
+    let lastRenderTime = performance.now();
     let animationFrameId: number;
 
-    const animateAircraft = () => {
+    const animateAircraft = (currentTime: number) => {
       const currentZoom = map.getZoom();
 
       if (currentZoom <= 6) {
+        previousFrameTime = currentTime;
         animationFrameId = requestAnimationFrame(animateAircraft);
         return;
       }
 
-      const now = performance.now();
-      const elapsedSeconds = Math.max(0, (now - lastUpdateTime) / 1000);
-      const deltaSeconds = Math.min(elapsedSeconds, 1);
+      const timeSinceLastRender = currentTime - lastRenderTime;
 
-      const targetMap = new Map<string, Aircraft>();
-      filteredAircraftData.forEach((aircraft) => {
-        targetMap.set(aircraft.id, aircraft);
+      if (timeSinceLastRender < FRAME_INTERVAL) {
+        animationFrameId = requestAnimationFrame(animateAircraft);
+        return;
+      }
+      lastRenderTime = currentTime;
+
+      // Guard against background tab throttling and large frame gaps
+      if (currentTime - previousFrameTime > 2000) {
+        previousFrameTime = currentTime;
+      }
+
+      const rawDeltaSeconds = (currentTime - previousFrameTime) / 1000;
+      const deltaSeconds = Math.min(Math.max(rawDeltaSeconds, 0.001), 0.1);
+      previousFrameTime = currentTime;
+
+      const elapsedSeconds = Math.min(
+        Math.max(0, (currentTime - lastUpdateTime) / 1000),
+        10
+      );
+
+      const visibleAircraftData = getVisibleAircraft(filteredAircraftData);
+
+      const latestAircraftById = new Map<string, Aircraft>(
+        filteredAircraftData.map((aircraft) => [aircraft.id, aircraft])
+      );
+
+      const displayedAircraftById = new Map<string, Aircraft>(
+        displayedAircraftData.map((aircraft) => [aircraft.id, aircraft])
+      );
+
+      const predictedAircraftData = visibleAircraftData.map((aircraft) => {
+        if (
+          aircraft.groundSpeed === undefined ||
+          aircraft.heading === undefined
+        ) {
+          return aircraft;
+        }
+
+        const predictedPosition = predictAircraftPosition(
+          aircraft.latitude,
+          aircraft.longitude,
+          aircraft.groundSpeed,
+          aircraft.heading,
+          elapsedSeconds
+        );
+
+        return {
+          ...aircraft,
+          latitude: predictedPosition.latitude,
+          longitude: predictedPosition.longitude,
+        };
       });
 
-      displayedAircraftData = displayedAircraftData.map((displayedAircraft) => {
-        const targetAircraft = targetMap.get(displayedAircraft.id);
+      displayedAircraftData = predictedAircraftData.map((targetAircraft) => {
+        const displayedAircraft = displayedAircraftById.get(targetAircraft.id);
 
-        if (!targetAircraft) {
-          return displayedAircraft;
+        if (!displayedAircraft) {
+          return targetAircraft;
+        }
+
+        const realAircraft = latestAircraftById.get(targetAircraft.id);
+
+        if (!realAircraft) {
+          return targetAircraft;
         }
 
         const positionError = distanceBetweenPoints(
           displayedAircraft.latitude,
           displayedAircraft.longitude,
-          targetAircraft.latitude,
-          targetAircraft.longitude
+          realAircraft.latitude,
+          realAircraft.longitude
         );
 
         const correctionRate = getCorrectionRate(positionError);
-        const correctionFactor = Math.min(1, deltaSeconds * correctionRate);
+        const correctionFactor = 1 - Math.exp(-correctionRate * deltaSeconds);
 
         const groundSpeed = targetAircraft.groundSpeed;
         const heading = targetAircraft.heading;
+        const hasMotionData =
+          groundSpeed !== undefined && heading !== undefined;
 
         const alongTrackDistance =
           heading !== undefined
@@ -438,7 +498,7 @@ export function AircraftMap() {
               )
             : 0;
 
-        const targetIsBehind = alongTrackDistance < -50;
+        const targetIsBehind = hasMotionData && alongTrackDistance < -25;
 
         if (
           targetIsBehind &&
