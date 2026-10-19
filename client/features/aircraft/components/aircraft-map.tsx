@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import Image from "next/image";
 import {
   GeoJSONSource,
   Map as MapLibreMap,
@@ -72,7 +73,7 @@ function renderAircraftPopupHTML(
     : "";
 
   const airlineHTML = airline
-    ? `<div class="text-[11px] text-slate-300 font-medium truncate mt-0.5">${airline}</div>`
+    ? `<div class="aircraft-popup__airline">${airline}</div>`
     : "";
 
   return `
@@ -80,7 +81,7 @@ function renderAircraftPopupHTML(
       <div class="aircraft-popup__header">
         <div>
           <span class="aircraft-popup__label">AIRCRAFT</span>
-          <h3 class="text-base font-bold text-white tracking-tight">${callsign}</h3>
+          <h3>${callsign}</h3>
           ${airlineHTML}
         </div>
 
@@ -109,7 +110,7 @@ function renderAircraftPopupHTML(
         </div>
       </div>
 
-      <div class="mt-2.5 pt-1.5 border-t border-slate-800 text-[10px] text-sky-400 font-medium flex items-center justify-between">
+      <div class="aircraft-popup__details-link">
         <span>Full Details in Sidebar →</span>
       </div>
     </div>
@@ -135,6 +136,9 @@ export function AircraftMap() {
   const selectedStateRef = useRef<SelectedAircraftState | null>(null);
 
   const [socketConnected, setSocketConnected] = useState<boolean>(true);
+  const [isMapReady, setIsMapReady] = useState<boolean>(false);
+  const [hasReceivedAircraftData, setHasReceivedAircraftData] =
+    useState<boolean>(false);
 
   const [counts, setCounts] = useState<{
     total: number;
@@ -283,6 +287,7 @@ export function AircraftMap() {
     updateMapFiltersRef.current = applyFilters;
 
     const handleAircraftUpdate = (data: Aircraft[]) => {
+      setHasReceivedAircraftData(true);
       latestAircraftData = data;
       lastUpdateTime = performance.now();
 
@@ -676,6 +681,8 @@ export function AircraftMap() {
     });
 
     map.on("load", async () => {
+      setIsMapReady(true);
+
       try {
         const aircraftImage = await map.loadImage("/airplane-svgrepo-com.png");
 
@@ -737,7 +744,7 @@ export function AircraftMap() {
   return (
     <div className="relative h-screen w-full overflow-hidden">
       {/* Top Left Floating Controls: Search + Advanced Filters */}
-      <div className="absolute top-4 left-4 z-20 flex flex-col gap-2 max-w-[calc(100vw-2rem)]">
+      <div className="absolute top-5 left-5 z-20 flex flex-col gap-2 max-w-[calc(100vw-2.5rem)]">
         <AircraftSearch
           onSelectAircraft={(aircraft) => {
             selectAircraftRef.current?.(aircraft, true);
@@ -779,6 +786,31 @@ export function AircraftMap() {
       />
 
       <div ref={containerRef} className="h-full w-full" />
+
+      {isMapReady && !hasReceivedAircraftData && (
+        <div
+          className="server-starting-loader pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
+          role="status"
+          aria-live="polite"
+          aria-label="Server starting. Waiting for live aircraft data."
+        >
+          <div className="server-starting-loader__content">
+            <div className="server-starting-loader__flight">
+              <span className="server-starting-loader__ring" aria-hidden="true" />
+              <Image
+                src="/server-starting-plane.png"
+                alt=""
+                width={96}
+                height={96}
+                priority
+                className="server-starting-loader__plane"
+              />
+            </div>
+            <p>Server Starting</p>
+            <span>Waiting for live aircraft data</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

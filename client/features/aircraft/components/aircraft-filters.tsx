@@ -147,7 +147,7 @@ export function AircraftFilters({
   }, [dynamicOptions.aircraftTypes, typeSearch]);
 
   return (
-    <div className={`relative ${className}`}>
+    <div className={`aircraft-filter-ui relative ${className}`}>
       {/* Top Bar Controls */}
       <div className="flex flex-wrap items-center gap-2">
         {/* Filter Toggle Button */}
@@ -173,13 +173,12 @@ export function AircraftFilters({
         </button>
 
         {/* Live Aircraft Count Statistic Pill */}
-        <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[rgba(8,15,24,0.92)] backdrop-blur-md border border-white/10 shadow-xl text-xs font-mono text-slate-300">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
+        <div className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[rgba(8,15,24,0.92)] backdrop-blur-md border border-white/10 shadow-xl text-xs text-slate-300">
           {totalCount > 0 ? (
-            <span>
-              Showing <strong className="text-white font-semibold">{matchingCount}</strong> of{" "}
-              <strong className="text-white font-semibold">{totalCount}</strong> aircraft ·{" "}
-              <span className="text-cyan-400">{visibleCount} in view</span>
+            <span className="whitespace-nowrap">
+              <strong className="text-white font-semibold">{matchingCount}</strong>{" "}
+              aircraft <span className="text-slate-400">·</span>{" "}
+              <span className="text-cyan-400">{visibleCount} visible</span>
             </span>
           ) : (
             <span className="text-slate-400">Listening to live transponder feed...</span>
@@ -321,7 +320,7 @@ export function AircraftFilters({
       {isOpen && (
         <div
           ref={panelRef}
-          className="absolute left-0 mt-2 w-[380px] sm:w-[440px] max-w-[calc(100vw-2rem)] max-h-[82vh] bg-[rgba(8,15,24,0.96)] backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-col z-30 divide-y divide-white/5 animate-in fade-in zoom-in-95 duration-150"
+          className="absolute left-0 mt-2 w-[380px] sm:w-[440px] max-w-[calc(100vw-2rem)] max-h-[76vh] bg-[rgba(8,15,24,0.96)] backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex flex-col z-30 divide-y divide-white/5 animate-in fade-in duration-150"
         >
           {/* Panel Header */}
           <div className="flex items-center justify-between px-4 py-3 bg-white/[0.02]">

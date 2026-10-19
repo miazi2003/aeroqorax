@@ -61,9 +61,9 @@ export function AircraftDetailsSidebar({
   return (
     <aside
       aria-label="Aircraft details sidebar"
-      className="fixed z-30 flex flex-col bg-slate-950/90 backdrop-blur-2xl border border-slate-800/90 shadow-2xl transition-all duration-300 ease-out motion-reduce:transition-none
-        bottom-0 left-0 right-0 max-h-[82vh] rounded-t-2xl
-        md:bottom-4 md:right-4 md:left-auto md:top-4 md:w-[400px] md:max-h-none md:rounded-2xl"
+      className="aircraft-details-sidebar fixed z-30 flex flex-col bg-white border-l border-[#cccccc] shadow-[-12px_0_35px_rgba(15,23,42,0.12)] transition-all duration-300 ease-out motion-reduce:transition-none
+        bottom-0 left-0 right-0 max-h-[88vh]
+        md:bottom-0 md:right-0 md:left-auto md:top-0 md:w-[420px] md:max-h-none"
     >
       {/* Mobile drag handle hint */}
       <div className="md:hidden flex justify-center pt-2 pb-1">

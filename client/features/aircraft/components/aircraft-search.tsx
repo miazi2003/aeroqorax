@@ -168,18 +168,10 @@ export function AircraftSearch({
   return (
     <div
       ref={containerRef}
-      className={`relative z-20 w-80 sm:w-96 max-w-[calc(100vw-2rem)] ${className}`}
+      className={`aircraft-search-ui relative z-20 w-[min(390px,calc(100vw-2.5rem))] ${className}`}
     >
       {/* Search Input Bar */}
-      <div className="relative flex items-center bg-[rgba(8,15,24,0.92)] backdrop-blur-md rounded-xl border border-white/10 shadow-2xl transition-all duration-200 focus-within:border-cyan-500/50 focus-within:ring-2 focus-within:ring-cyan-500/20">
-        <div className="pl-3.5 pr-2 flex items-center justify-center text-slate-400">
-          {isLoading ? (
-            <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-          ) : (
-            <Search className="w-4 h-4 text-slate-400" />
-          )}
-        </div>
-
+      <div className="relative flex h-14 items-center rounded-full border border-[#cccccc] bg-white p-1.5 pl-5 shadow-[0_10px_30px_rgba(15,23,42,0.14)] transition-[box-shadow,border-color] duration-200 focus-within:border-black focus-within:shadow-[0_12px_34px_rgba(15,23,42,0.18)]">
         <input
           ref={inputRef}
           type="text"
@@ -201,8 +193,8 @@ export function AircraftSearch({
             }
           }}
           onKeyDown={handleKeyDown}
-          placeholder="Search callsign, flight, reg (e.g. UBG338, BS338, S2-AJV)"
-          className="w-full py-2.5 pr-8 bg-transparent text-sm text-slate-100 placeholder:text-slate-500 focus:outline-none"
+          placeholder="Search aircraft, flight or registration"
+          className="min-w-0 flex-1 bg-transparent pr-2 text-sm text-slate-900 placeholder:text-slate-500 focus:outline-none"
           role="combobox"
           aria-expanded={isOpen}
           aria-haspopup="listbox"
@@ -216,12 +208,25 @@ export function AircraftSearch({
           <button
             type="button"
             onClick={handleClear}
-            className="p-1 mr-2 text-slate-400 hover:text-white rounded-md hover:bg-white/10 transition-colors focus:outline-none focus:ring-1 focus:ring-white/20"
+            className="mr-1 p-1.5 text-slate-400 transition-colors hover:text-slate-900 focus:outline-none"
             aria-label="Clear flight search input"
           >
             <X className="w-3.5 h-3.5" />
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => inputRef.current?.focus()}
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-black text-white shadow-[0_5px_14px_rgba(15,23,42,0.24)] transition-colors hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-black/25 focus:ring-offset-2"
+          aria-label="Search aircraft"
+        >
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Search className="h-4 w-4" strokeWidth={2.5} />
+          )}
+        </button>
       </div>
 
       {/* Autocomplete Dropdown */}
@@ -229,7 +234,7 @@ export function AircraftSearch({
         <div
           id="aircraft-search-listbox"
           role="listbox"
-          className="absolute left-0 right-0 mt-2 max-h-80 overflow-y-auto bg-[rgba(8,15,24,0.96)] backdrop-blur-lg border border-white/10 rounded-xl shadow-2xl divide-y divide-white/5 scrollbar-thin scrollbar-thumb-slate-700"
+          className="absolute left-0 right-0 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-[#cccccc] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.16)] divide-y divide-slate-100 scrollbar-thin scrollbar-thumb-slate-300"
         >
           {errorMessage ? (
             <div className="p-4 flex items-center gap-2.5 text-xs text-rose-400">
