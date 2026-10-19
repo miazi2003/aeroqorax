@@ -136,7 +136,6 @@ export function AircraftMap() {
   const selectedStateRef = useRef<SelectedAircraftState | null>(null);
 
   const [socketConnected, setSocketConnected] = useState<boolean>(true);
-  const [isMapReady, setIsMapReady] = useState<boolean>(false);
   const [hasReceivedAircraftData, setHasReceivedAircraftData] =
     useState<boolean>(false);
 
@@ -681,8 +680,6 @@ export function AircraftMap() {
     });
 
     map.on("load", async () => {
-      setIsMapReady(true);
-
       try {
         const aircraftImage = await map.loadImage("/airplane-svgrepo-com.png");
 
@@ -787,7 +784,7 @@ export function AircraftMap() {
 
       <div ref={containerRef} className="h-full w-full" />
 
-      {isMapReady && !hasReceivedAircraftData && (
+      {!hasReceivedAircraftData && (
         <div
           className="server-starting-loader pointer-events-none absolute inset-0 z-10 flex items-center justify-center"
           role="status"
